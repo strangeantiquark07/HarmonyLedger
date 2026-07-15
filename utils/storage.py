@@ -36,3 +36,16 @@ def load_project(project_name):
         data = json.load(file)
 
     return Project.from_dict(data)
+
+
+def list_projects():
+    """
+    Return a sorted list of all saved project names.
+    """
+
+    projects = []
+
+    for file in PROJECTS_DIR.glob("*.json"):
+        projects.append(file.stem.replace("_", " "))
+
+    return sorted(projects)
