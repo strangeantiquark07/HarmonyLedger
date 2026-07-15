@@ -9,11 +9,8 @@ PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def save_project(project):
-    """
-    Save a Project object as a JSON file.
-    """
-
-    file_path = PROJECTS_DIR / f"{project.name}.json"
+    safe_name = project.name.strip().replace(" ", "_")
+    file_path = PROJECTS_DIR / f"{safe_name}.json"
 
     with open(file_path, "w", encoding="utf-8") as file:
         json.dump(
@@ -25,6 +22,8 @@ def save_project(project):
 
     return file_path
 
+from utils.models import Project
+
 def load_project(project_name):
     """
     Load a project from a JSON file.
@@ -34,4 +33,6 @@ def load_project(project_name):
     file_path = PROJECTS_DIR / f"{safe_name}.json"
 
     with open(file_path, "r", encoding="utf-8") as file:
-        return json.load(file)
+        data = json.load(file)
+
+    return Project.from_dict(data)
