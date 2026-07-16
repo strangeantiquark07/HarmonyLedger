@@ -149,9 +149,7 @@ This project was built end-to-end using **IBM Bob**, IBM's agentic coding assist
 | Stage | What Bob Did |
 |---|---|
 | Planning | Application architecture, JSON schema design, AI integration workflow, regeneration pipeline design |
-| Development | GGoogle Gemini API integration
-
-, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
+| Development | GGoogle Gemini API integration, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
 | Testing & QA | Regeneration test harness, unit/integration tests, edge-case hunting |
 | Documentation | README, architecture notes, docstrings, demo narrative |
 
