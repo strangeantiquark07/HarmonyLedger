@@ -65,27 +65,34 @@ class Project:
     schema_migrations: list = field(default_factory=list)
 
     # ---------------------------------------------------------------------------
-    # Song content — stub populated in Phase 2 by the AI engine.
+    # Song content — populated by ai_engine.generate_song() in Phase 2.
     #
-    # Expected top-level shape:
+    # Top-level shape (all fields required after first generation):
     #   {
-    #     "title":   str,
-    #     "mood":    str,
-    #     "tempo":   str,
-    #     "style":   str,
-    #     "genre":   str,
+    #     "title":               str,
+    #     "genre":               str,
+    #     "style":               str,
+    #     "mood":                str,
+    #     "tempo":               str,   # e.g. "72 BPM" or "Slow trap"
+    #     "key":                 str,   # e.g. "F minor"
+    #     "time_signature":      str,   # e.g. "4/4"
+    #     "lyrical_themes":      list[str],
+    #     "generation_timestamp":str,   # ISO-8601, stamped by ai_engine
+    #     "model_used":          str,   # e.g. "gemini-2.5-flash"
     #     "sections": {
-    #       "<key>": {             # e.g. "verse", "chorus", "bridge"
+    #       "verse_1" | "chorus" | "verse_2" | "bridge" | "outro": {
     #         "lyrics":        str,
     #         "provenance":    "ai_generated" | "human_written" | "ai_then_human",
     #         "locked":        bool,
     #         "locked_at":     ISO-8601 | null,
     #         "locked_by":     "Human" | "AI" | null,
     #         "last_edited_by":"Human" | "AI" | null,
-    #         "edit_count":    int        # incremented on every human edit
+    #         "edit_count":    int   # incremented on every human edit
     #       }
     #     }
     #   }
+    #
+    # Before first generation: {"genre": str} only (set by create_project.py).
     # ---------------------------------------------------------------------------
     song: dict = field(default_factory=dict)
 
@@ -112,7 +119,7 @@ class Project:
     #   "exported_at":           ISO-8601 | null,
     #   "export_format":         "pdf" | "json" | "html" | null,
     #   "transparency_statement":str,   # human-approved text
-    #   "authorship_line":       str,   # e.g. "Written by Jane + IBM Granite"
+    #   "authorship_line":       str,   # e.g. "Written by Jane + Google Gemini"
     #   "watermark_id":          uuid4 | null   # unique ID per export instance
     # }
     passport: dict = field(default_factory=dict)
@@ -120,14 +127,14 @@ class Project:
     # ---------------------------------------------------------------------------
     # Named contributors (human and AI).
     # The AI model is a collaborator — storing model_id here lets the passport
-    # reference exactly which Granite version wrote which sections.
+    # reference exactly which Gemini version wrote which sections.
     #
     # Each entry:
     # {
     #   "collaborator_id":  uuid4,
     #   "name":             str,
     #   "role":             "composer" | "lyricist" | "producer" | "ai_model",
-    #   "model_id":         str | null,   # e.g. "ibm/granite-13b-instruct-v2"
+    #   "model_id":         str | null,   # e.g. "gemini-2.5-flash"
     #   "contribution_pct": float | null  # filled by Phase 4
     # }
     collaborators: list = field(default_factory=list)

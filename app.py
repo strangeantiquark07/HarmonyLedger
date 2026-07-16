@@ -1,7 +1,8 @@
 import streamlit as st
 
-import pages.create_project as create_project_page
-import pages.open_project as open_project_page
+import views.create_project as create_project_page
+import views.open_project as open_project_page
+import views.view_project as view_project_page
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page configuration  (must be the very first Streamlit call)
@@ -106,8 +107,8 @@ h1, h2, h3, h4 { color: #FAFAFA !important; letter-spacing: -0.02em; }
 h1 { font-size: 1.55rem !important; font-weight: 700 !important; line-height: 1.25 !important; }
 h2 { font-size: 1.1rem  !important; font-weight: 600 !important; }
 h3 { font-size: 0.975rem !important; font-weight: 600 !important; }
-p, li { color: #C4C4C8; font-size: 0.9375rem; line-height: 1.65; }
-.stMarkdown p { color: #C4C4C8; }
+p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
+.stMarkdown p { color: #C8C8CC; }
 
 /* ═══════════════════════════════════════════════════════
    4. INPUTS & TEXTAREAS
@@ -130,7 +131,7 @@ p, li { color: #C4C4C8; font-size: 0.9375rem; line-height: 1.65; }
 [data-testid="stTextInput"] label,
 [data-testid="stTextArea"] label,
 [data-testid="stSelectbox"] label {
-    color: #71717A !important;
+    color: #A1A1AA !important;
     font-size: 0.72rem !important;
     font-weight: 600 !important;
     text-transform: uppercase;
@@ -205,7 +206,7 @@ p, li { color: #C4C4C8; font-size: 0.9375rem; line-height: 1.65; }
     font-size: 0.72rem !important;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: #71717A !important;
+    color: #A1A1AA !important;
     font-weight: 600 !important;
 }
 [data-testid="stMetricValue"] {
@@ -250,7 +251,7 @@ hr { border-color: #2D2D31 !important; margin: 1rem 0 !important; }
    10. CAPTIONS
    ═══════════════════════════════════════════════════════ */
 small, .stCaption, [data-testid="stCaptionContainer"] p {
-    color: #71717A !important;
+    color: #A1A1AA !important;
     font-size: 0.75rem !important;
 }
 
@@ -323,8 +324,8 @@ with st.sidebar:
             <span style="font-size:1.0rem;font-weight:700;color:#FAFAFA;
                          letter-spacing:-0.02em;line-height:1.2;">HarmonyLedger</span>
         </div>
-        <div style="font-size:0.7rem;color:#52525B;padding-left:1.85rem;
-                    line-height:1.3;">Creative Passport for Human-AI Songwriting</div>
+        <div style="font-size:0.7rem;color:#71717A;padding-left:1.85rem;
+                        line-height:1.3;">Creative Passport for Human-AI Songwriting</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -332,7 +333,7 @@ with st.sidebar:
     st.markdown("""
     <div style="padding:0.85rem 1.1rem 0.35rem;">
         <span style="font-size:0.65rem;font-weight:700;text-transform:uppercase;
-                     letter-spacing:0.1em;color:#3F3F46;">Workspace</span>
+                     letter-spacing:0.1em;color:#71717A;">Workspace</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -355,6 +356,9 @@ with st.sidebar:
         use_container_width=True,
         type="primary" if _open_active else "secondary",
     ):
+        # Clear active_project_id so the library renders as a plain list —
+        # no card is pre-highlighted and no automatic navigation fires.
+        st.session_state.active_project_id = None
         st.session_state.page = "Open Project"
         st.rerun()
 
@@ -372,7 +376,7 @@ with st.sidebar:
                     border:1px solid #2D2D31;border-radius:8px;
                     padding:0.7rem 0.85rem;">
             <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;
-                        letter-spacing:0.1em;color:#3F3F46;margin-bottom:0.4rem;">
+                        letter-spacing:0.1em;color:#71717A;margin-bottom:0.4rem;">
                 Active Project
             </div>
             <div style="font-size:0.875rem;font-weight:600;color:#FAFAFA;
@@ -394,19 +398,19 @@ with st.sidebar:
     st.markdown("""
     <div style="padding:0.25rem 1.1rem 0.25rem;">
         <span style="font-size:0.65rem;font-weight:700;text-transform:uppercase;
-                     letter-spacing:0.1em;color:#3F3F46;">Coming in Phase 2+</span>
+                     letter-spacing:0.1em;color:#71717A;">Coming in Phase 3+</span>
     </div>
     """, unsafe_allow_html=True)
 
     for _label in [
-        "🎼  Timeline Editor",
-        "✍️  Lyrics Studio",
-        "🤖  AI Studio",
+        "🔒  Section Locking",
+        "🔄  Targeted Regen",
         "📊  Contributions",
         "🛂  Creative Passport",
+        "🔊  Audio Preview",
     ]:
         st.markdown(
-            f"<div style='font-size:0.8rem;color:#3A3A3F;padding:0.2rem 1.1rem;'>"
+            f"<div style='font-size:0.8rem;color:#71717A;padding:0.2rem 1.1rem;'>"
             f"{_label}</div>",
             unsafe_allow_html=True,
         )
@@ -415,17 +419,17 @@ with st.sidebar:
     st.markdown("""
     <div style="margin:0.75rem 1.1rem 0;padding-top:0.75rem;border-top:1px solid #2D2D31;">
         <span style="font-size:0.65rem;font-weight:700;text-transform:uppercase;
-                     letter-spacing:0.1em;color:#3F3F46;">Build Progress</span>
+                     letter-spacing:0.1em;color:#71717A;">Build Progress</span>
     </div>
     """, unsafe_allow_html=True)
 
     _phases    = ["Storage", "AI Engine", "Section Lock", "Passport", "Audio", "Launch"]
-    _completed = 1  # Phase 1 done
+    _completed = 2  # Phase 2 done
     for _i, _phase in enumerate(_phases):
         _done   = _i < _completed
         _cur    = _i == _completed
-        _col    = "#1DB954" if _done else ("#F59E0B" if _cur else "#2D2D31")
-        _lcol   = "#D4D4D8" if (_done or _cur) else "#3F3F46"
+        _col    = "#1DB954" if _done else ("#F59E0B" if _cur else "#3A3A3F")
+        _lcol   = "#D4D4D8" if (_done or _cur) else "#71717A"
         _check  = "✓" if _done else ("→" if _cur else "·")
         st.markdown(
             f"<div style='display:flex;align-items:center;gap:0.5rem;"
@@ -442,8 +446,8 @@ with st.sidebar:
     st.markdown("""
     <div style="margin-top:auto;padding:1.25rem 1.1rem 1rem;
                 border-top:1px solid #2D2D31;margin-top:1rem;">
-        <div style="font-size:0.68rem;color:#3F3F46;">Phase 1 · v0.1.0</div>
-        <div style="font-size:0.68rem;color:#3F3F46;">Built with IBM Bob ✦ IBM Granite</div>
+        <div style="font-size:0.68rem;color:#71717A;">Phase 2 · v0.2.0</div>
+        <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -455,7 +459,7 @@ st.markdown("""
 <div style="margin-bottom:0.1rem;">
     <div style="font-size:2.1rem;font-weight:800;color:#FAFAFA;
                 letter-spacing:-0.04em;line-height:1.15;">🎵 HarmonyLedger</div>
-    <div style="font-size:0.9rem;color:#52525B;font-weight:400;
+    <div style="font-size:0.9rem;color:#8E8E96;font-weight:400;
                 margin-top:0.3rem;letter-spacing:0.01em;">
         The Creative Passport for Human-AI Songwriting
     </div>
@@ -467,7 +471,7 @@ st.markdown("""
 # Router  — guard ensures page is always a known value before delegating
 # ─────────────────────────────────────────────────────────────────────────────
 
-_VALID_PAGES = {"Create Project", "Open Project"}
+_VALID_PAGES = {"Create Project", "Open Project", "View Project"}
 if st.session_state.page not in _VALID_PAGES:
     st.session_state.page = "Create Project"
 
@@ -475,3 +479,5 @@ if st.session_state.page == "Create Project":
     create_project_page.render()
 elif st.session_state.page == "Open Project":
     open_project_page.render()
+elif st.session_state.page == "View Project":
+    view_project_page.render()

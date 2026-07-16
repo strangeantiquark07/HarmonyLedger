@@ -34,7 +34,7 @@ Most AI songwriting tools also regenerate the entire song on every click, quietl
 
 ## Features
 
-- 🎼 **Vibe-to-song generation** — turn a one-line prompt into a structured song (title, verse/chorus/bridge, mood, tempo, style, genre) using IBM Granite.
+- 🎼 **Vibe-to-song generation** — turn a one-line prompt into a structured song (title, verse/chorus/bridge, mood, tempo, style, genre) using using Google Gemini.
 - 🔒 **Lock & regenerate** — lock the sections you're happy with and regenerate only the one you're not. A drift check guarantees locked sections never change.
 - 📜 **Unified creative timeline** — every human and AI action (generate, lock, regenerate, accept, reject, edit) is logged in one place.
 - 📊 **Contribution dashboard** — a deterministic, defensible human-vs-AI contribution split, computed straight from the timeline.
@@ -56,7 +56,7 @@ The signature feature is **lock and regenerate**: when you regenerate a section,
 | Layer | Technology |
 |---|---|
 | App / UI | Streamlit |
-| AI (song generation) | IBM Granite via watsonx |
+| AI (song generation) | Google Gemini API|
 | Coding assistant used to build this project | IBM Bob (agentic — Plan / Ask / Agent modes) |
 | Storage | Single JSON file per project |
 | PDF export | ReportLab |
@@ -81,7 +81,7 @@ All views read from the same project JSON, so they can never disagree with each 
 
 ### Prerequisites
 - Python 3.10+
-- An IBM watsonx account with access to a Granite model
+- A Google AI Studio account with a Gemini API key.
 - `pip` for dependency installation
 
 ### Installation
@@ -94,12 +94,11 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Create a `.env` file with your watsonx credentials:
+Create a `.env` file with your gemini api key credentials:
 
 ```
-WATSONX_API_KEY=your_api_key
-WATSONX_PROJECT_ID=your_project_id
-WATSONX_URL=your_region_url
+GEMINI_API_KEY=your_api_key
+
 ```
 
 ### Run the app
@@ -113,7 +112,7 @@ streamlit run app.py
 ## Usage
 
 1. **Start a project** — enter a one-line "vibe" for your song.
-2. **Generate** — Granite returns a structured song (title, sections, mood, tempo, genre).
+2. **Generate** — Gemini returns a structured song (title, sections, mood, tempo, genre).
 3. **Lock** any sections you're happy with.
 4. **Regenerate** an unlocked section — only that section changes; everything locked stays byte-for-byte identical.
 5. **Review the timeline and contribution dashboard** as you go.
@@ -135,7 +134,7 @@ Both numbers are pulled from the same timeline, so the dashboard and the exporte
 ## Roadmap
 
 - [x] Phase 1 — Streamlit skeleton + project storage
-- [x] Phase 2 — AI song starter (Granite/watsonx integration)
+- [x] Phase 2 — AI Song Starter (Google Gemini API)
 - [x] Phase 3 — Section locking & targeted regeneration
 - [x] Phase 4 — Creative timeline, contribution dashboard, Passport export
 - [ ] Phase 5 — Audio preview (stretch goal)
@@ -150,7 +149,9 @@ This project was built end-to-end using **IBM Bob**, IBM's agentic coding assist
 | Stage | What Bob Did |
 |---|---|
 | Planning | Application architecture, JSON schema design, AI integration workflow, regeneration pipeline design |
-| Development | Granite/watsonx integration, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
+| Development | GGoogle Gemini API integration
+
+, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
 | Testing & QA | Regeneration test harness, unit/integration tests, edge-case hunting |
 | Documentation | README, architecture notes, docstrings, demo narrative |
 

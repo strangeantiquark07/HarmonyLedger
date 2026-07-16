@@ -133,11 +133,11 @@ def render() -> None:
             "border-left:3px solid #8B5CF6;border-radius:10px;"
             "padding:0.9rem 1rem;margin-top:0.85rem;'>"
             "<div style='font-size:0.68rem;font-weight:700;text-transform:uppercase;"
-            "letter-spacing:0.09em;color:#8B5CF6;margin-bottom:0.45rem;'>✦ Phase 2 Preview</div>"
-            "<p style='font-size:0.8rem;color:#71717A;margin:0;line-height:1.55;'>"
-            "Your vibe will be sent to <strong style='color:#C4C4C8;'>IBM Granite</strong> "
-            "to generate a full structured song — verse, chorus, bridge, mood, tempo, and genre. "
-            "Lock any section you like and regenerate only what you don't.</p>"
+            "letter-spacing:0.09em;color:#8B5CF6;margin-bottom:0.45rem;'>✦ AI Generation</div>"
+            "<p style='font-size:0.825rem;color:#B0B0B8;margin:0;line-height:1.6;'>"
+            "Your vibe will be sent to <strong style='color:#EAEAEE;'>Google Gemini</strong> "
+            "to generate a complete original song — verse, chorus, bridge, mood, tempo, and key. "
+            "Lock any section you love and regenerate only what you don't.</p>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -160,7 +160,7 @@ def render() -> None:
 
             # Character counter
             char_count    = len(project_name)
-            counter_color = "#EF4444" if char_count >= PROJECT_NAME_MAX_LENGTH else "#52525B"
+            counter_color = "#EF4444" if char_count >= PROJECT_NAME_MAX_LENGTH else "#71717A"
             st.markdown(
                 f"<div style='text-align:right;font-size:0.7rem;color:{counter_color};"
                 f"margin-top:-0.45rem;margin-bottom:0.8rem;'>"
@@ -195,27 +195,27 @@ def render() -> None:
             "<div style='background:#141417;border:1px solid #2D2D31;"
             "border-radius:10px;padding:1rem 1.1rem;margin-top:0.85rem;'>"
             "<div style='font-size:0.68rem;font-weight:700;text-transform:uppercase;"
-            "letter-spacing:0.09em;color:#3F3F46;margin-bottom:0.6rem;'>What happens next</div>"
+            "letter-spacing:0.09em;color:#A1A1AA;margin-bottom:0.6rem;'>What happens next</div>"
             "<div style='display:flex;flex-direction:column;gap:0.5rem;'>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>①</span>"
-            "<span style='font-size:0.82rem;color:#71717A;line-height:1.5;'>"
+            "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
             "Your project is saved as a single JSON file — the foundation for everything.</span></div>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>②</span>"
-            "<span style='font-size:0.82rem;color:#71717A;line-height:1.5;'>"
-            "In Phase 2, IBM Granite turns your vibe into a full structured song.</span></div>"
+            "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
+            "Google Gemini turns your vibe into a full structured song — title, lyrics, mood, and tempo.</span></div>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>③</span>"
-            "<span style='font-size:0.82rem;color:#71717A;line-height:1.5;'>"
+            "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
             "Lock sections you love, regenerate the one you don't — you stay the author.</span></div>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>④</span>"
-            "<span style='font-size:0.82rem;color:#71717A;line-height:1.5;'>"
+            "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
             "Export a Creative Passport proving what you wrote vs. what the AI wrote.</span></div>"
 
             "</div></div>",
@@ -276,10 +276,10 @@ def render() -> None:
             st.rerun()
             return
 
-        # ── Success — redirect to library ─────────────────────────────────
+        # ── Success — go straight to the new project workspace ────────────
         st.toast(f"'{project.name}' created!", icon="🎉")
         st.session_state.active_project_id = project.project_id
         st.session_state.cp_vibe_text      = ""
         st.session_state.cp_preset_genre   = ""
-        st.session_state.page              = "Open Project"
+        st.session_state.page              = "View Project"
         st.rerun()

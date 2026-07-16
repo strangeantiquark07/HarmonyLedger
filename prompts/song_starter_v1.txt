@@ -1,0 +1,61 @@
+You are a professional songwriter and music producer. Your sole task is to generate a complete original song as a single JSON object.
+
+GENRE: {genre}
+VIBE: {vibe}
+
+OUTPUT RULES — read these before generating:
+1. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. No surrounding text. Your entire response must be parseable by json.loads() in Python.
+2. Every field listed in the schema below is required. Do not omit any field. Do not add fields not listed in the schema.
+3. The section keys must be exactly: verse_1, chorus, verse_2, bridge, outro. Do not rename them or add new ones.
+4. Write original, creative lyrics. Each section must have a non-empty "lyrics" string. Do not write placeholder text.
+5. Honour the GENRE and VIBE. The music, mood, and lyrics must feel authentic to both.
+
+SCHEMA — your response must match this structure exactly:
+{{
+  "title":          "<song title>",
+  "genre":          "<genre>",
+  "style":          "<production style description>",
+  "mood":           "<emotional tone>",
+  "tempo":          "<tempo, e.g. 84 BPM or Slow>",
+  "key":            "<musical key, e.g. A minor>",
+  "time_signature": "<time signature, e.g. 4/4>",
+  "lyrical_themes": ["<theme 1>", "<theme 2>"],
+  "sections": {{
+    "verse_1": {{ "lyrics": "<verse 1 lyrics>" }},
+    "chorus":  {{ "lyrics": "<chorus lyrics>" }},
+    "verse_2": {{ "lyrics": "<verse 2 lyrics>" }},
+    "bridge":  {{ "lyrics": "<bridge lyrics>" }},
+    "outro":   {{ "lyrics": "<outro lyrics>" }}
+  }}
+}}
+
+EXAMPLE OUTPUT (use this only as a structural reference — write entirely different content):
+{{
+  "title":          "Glass City Rain",
+  "genre":          "Indie Folk",
+  "style":          "Fingerpicked acoustic guitar with cello and brushed drums",
+  "mood":           "Melancholic, quietly hopeful",
+  "tempo":          "68 BPM",
+  "key":            "D minor",
+  "time_signature": "3/4",
+  "lyrical_themes": ["longing", "homecoming", "fading light"],
+  "sections": {{
+    "verse_1": {{
+      "lyrics": "The floorboards remember your steps\nThe kettle still hums at eight\nI leave the hall light on for you\nAs if you could still be late"
+    }},
+    "chorus": {{
+      "lyrics": "Come home through the glass city rain\nI'll hold every word you saved\nThe city keeps changing its name\nBut I still know how to find you in the grey"
+    }},
+    "verse_2": {{
+      "lyrics": "Your jacket still hangs by the door\nA map of a winter past\nI trace the worn hem with my thumb\nSome things are too small to last"
+    }},
+    "bridge": {{
+      "lyrics": "Maybe the roads all lead to the same\nQuiet place between what we said and what stayed\nI'm not waiting now, I'm just standing here\nWatching the moment you left fill with rain"
+    }},
+    "outro": {{
+      "lyrics": "Come home\nCome home\nThe light is still on\nCome home"
+    }}
+  }}
+}}
+
+CRITICAL: Your response must be a single valid JSON object — nothing before it, nothing after it. Do not wrap it in code fences. Do not add any explanation. Output only the JSON.

@@ -7,14 +7,14 @@ HarmonyLedger is an AI songwriting studio that doesn't just help you write a son
 
 ## The Two AIs in This Project
 
-HarmonyLedger uses two distinct IBM AI systems, on two different layers. Keeping them separate is what makes the whole build coherent — and it is what turns this into an all-IBM stack.
+HarmonyLedger uses two distinct AI systems, on two different layers. Keeping them separate is what makes the whole build coherent.
 
 | Layer | System | Role |
 |---|---|---|
 | The builder | IBM Bob | IBM's agentic coding assistant. It builds the application — plans architecture, writes the integration and features, generates the test harness and docs. This is what the challenge means by "built using IBM Bob." |
-| The runtime brain | IBM Granite (via watsonx) | The model living inside the shipped app. It turns a creator's vibe into a structured song and regenerates individual sections on request. |
+| The runtime brain | Google Gemini API | The model inside the shipped app. It turns a creator's vibe into a structured song and regenerates individual sections on request.
 
-**Why this matters for scoring — Double-IBM stack.** Bob builds it, Granite runs it. Every layer of the product is IBM. In an IBM-judged challenge that rewards effective use of IBM tools, this is a deliberate advantage — and it makes Bob's flagship task ("Bob integrated IBM's own AI model") land far harder than integrating a third-party API would.
+**Why this matters for scoring**IBM Bob remains the project's primary software engineering assistant, while Google Gemini powers the runtime AI inside the application. This separation demonstrates Bob's ability to architect, build, validate, and integrate a production-ready AI system regardless of the underlying model.
 
 ---
 
@@ -36,9 +36,9 @@ HarmonyLedger is a songwriting studio built on a single principle: the creator s
 
 ---
 
-## Runtime Model: Why IBM Granite
+## Runtime Model:Why Google Gemini
 
-**The one real risk, and how we handle it.** Granite models are smaller than GPT-4-class models, so reliable structured JSON is harder. That is exactly what Phase 2's backward control (validate every reply, retry on failure) exists for. We also use watsonx's structured-output / JSON mode where available, plus a couple of few-shot examples in the prompt. The engine is tested in isolation before it touches the UI, so a bad song is never confused with a bad connection.
+**The one real risk, and how we handle it.**Gemini provides reliable structured generation suitable for JSON-based workflows. Phase 2 still validates every response and retries on failures to guarantee downstream components always receive complete, machine-readable song data. The AI engine is tested independently before integration with the UI.
 
 ---
 
@@ -71,7 +71,8 @@ Identify and propose solutions for edge cases (duplicate project names, invalid/
 
 ### Phase 2 — AI Song Starter (Core Engine)
 
-**What it is.** Replace the placeholder AI module with IBM Granite via watsonx. A vibe becomes a structured song — title, verse/chorus/bridge, mood, tempo, style, genre — returned as clean JSON. Tested in isolation with a small script before wiring to the UI.
+**What it is.** Replace the placeholder AI module with the Google Gemini API. A vibe becomes a structured song — title, verse / chorus / bridge, mood, tempo, style, genre — returned as clean JSON. Tested in isolation with a small script before wiring to the UI.
+
 
 **Why it exists.** This is the heart of the product. Regeneration, contribution tracking, and the Creative Passport all depend on receiving reliable structured song data.
 
@@ -81,13 +82,15 @@ Identify and propose solutions for edge cases (duplicate project names, invalid/
 - Define what a complete song must contain and the pass bar (ten valid JSONs in a row, no manual fixes).
 
 **IBM Bob — builds & verifies**
-- *Plan Mode:* design the AI integration workflow and the response schema.
-- *Ask Mode:* draft and iterate the prompt template until outputs are consistently structured (forward control).
-- *Agent Mode:* build the watsonx/Granite API wrapper.
-- *Agent Mode:* implement retry logic, JSON validation, and error handling (backward control).
-- *Agent Mode:* wire the validated responses into the Streamlit interface.
+- Plan Mode: design the AI integration workflow and the response schema.
+- Ask Mode: draft and iterate the prompt template until outputs are consistently structured (forward control).
+- Agent Mode: build the Google Gemini API wrapper.
+- Agent Mode: implement retry logic, JSON validation, and error handling (backward control).
+- Agent Mode: wire the validated responses into the Streamlit interface.
 
-> **Bob Showcase #1 — Best Technical Use of IBM Bob.** Bob builds the complete generation pipeline that integrates IBM's own Granite model. This is Bob using IBM to wire up IBM — the single most quotable line in the "how was Bob used" story.
+
+> **Bob Showcase #1 — Best Technical Use of IBM Bob.** Bob builds the complete AI generation pipeline that integrates the Google Gemini API. This demonstrates Bob's ability to architect, implement, validate, and integrate an end-to-end LLM-powered feature from prompt design to production-ready application integration
+
 
 ### Phase 3 — Section Locking & Targeted Regeneration (Signature Feature)
 
@@ -182,7 +185,7 @@ Both come straight from the timeline log, so the dashboard and the passport can 
 | Stage | What Bob Did |
 |---|---|
 | Planning | Designed the application architecture, stress-tested the JSON schema, planned the AI integration workflow, and designed the regeneration pipeline. |
-| Development | Built the Granite/watsonx integration, the regeneration + drift-check logic, the timeline logger, the contribution dashboard, the Creative Passport PDF, and the audio-preview feature. |
+| Development | Built the Google Gemini API integration, the regeneration + drift-check logic, the timeline logger, the contribution dashboard, the Creative Passport PDF, and the audio-preview feature. |
 | Testing & QA | Generated the regeneration test harness, produced unit and integration tests, and hunted edge cases. |
 | Documentation | Drafted the README, architecture docs, and docstrings, and helped shape the demo narrative. |
 
@@ -202,7 +205,7 @@ We keep a running Bob decision log throughout the build. For each significant in
 
 | Criterion (1–5) | How HarmonyLedger Scores |
 |---|---|
-| Technical Execution | All-IBM stack: Bob builds, Granite runs. A non-trivial signature feature (lock + drift check) verified by an automated harness Bob wrote. |
+| Technical Execution | AI-powered architecture: IBM Bob builds the application while Google Gemini powers the runtime songwriting engine. A non-trivial lock-and-regenerate workflow is verified by an automated harness generated with Bob.|
 | Innovation | The Creative Passport reframes AI songwriting from "who generated the words" to "who authored the work" — a genuinely novel output. |
 | Challenge Fit | Squarely in "Reimagine Creative Industries with AI," and it tackles a real trust problem creators face right now, not just a generation gap. |
 | Implementation & Feasibility | Runs today on free tiers; a deterministic contribution methodology; a scoped stretch goal; realistic month-long plan with concrete done-bars. |
