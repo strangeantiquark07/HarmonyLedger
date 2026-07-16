@@ -1,5 +1,5 @@
 """
-pages/view_project.py
+views/view_project.py
 ─────────────────────
 Project workspace — the primary page for Phase 2 and beyond.
 
@@ -11,13 +11,19 @@ Responsibilities:
   - Render the generated song (title, metadata strip, section cards).
   - Handle all errors gracefully with clear, user-friendly messages.
 
-This page is intentionally thin: all AI logic lives in utils/ai_engine.py
-and all persistence lives in utils/storage.py. This page only coordinates
-between them and renders the result.
+Phase 3 additions:
+  - Lock/unlock toggle per section card (_toggle_lock).
+  - Targeted single-section regeneration (_run_section_regeneration).
+  - Drift-check guard: locked sections verified before save.
+  - New timeline event types: section_locked, section_unlocked, section_regenerated.
 
-Phase 3 note: the section cards rendered here are the natural location for
-locking controls and the Regenerate button. They are built with that
-extension in mind (each card is self-contained and keyed by section name).
+Phase 4 (human editing) additions:
+  - Inline edit mode per section card (_save_human_edit).
+  - Edit button opens a text_area; Save/Cancel controls close it.
+  - Provenance transitions: ai_generated → ai_then_human; human_written stays.
+  - edit_count incremented and last_edited_by set to "Human" on every save.
+  - human_edit timeline event logged on every successful save.
+  - Locked sections cannot be edited (Edit button hidden while locked).
 """
 
 import html as _html
@@ -26,7 +32,14 @@ from uuid import uuid4
 
 import streamlit as st
 
-from utils.ai_engine import generate_song, SongGenerationError
+from utils.ai_engine import (
+    generate_song,
+    regenerate_section,
+    snapshot_locked_sections,
+    assert_locked_sections_unchanged,
+    SongGenerationError,
+    DriftError,
+)
 from utils.storage import load_project, save_project, ProjectNotFoundError, ProjectCorruptedError
 from utils.timeline import append_event
 
@@ -112,14 +125,16 @@ def _meta_chip(label: str, value: str, color: str = "#C4C4C8") -> str:
 
 
 def _event_icon(event_type: str) -> str:
+    """Return an emoji icon for a timeline event type."""
     icons = {
-        "project_created":     "🎵",
-        "ai_generated":        "🤖",
-        "section_locked":      "🔒",
-        "section_regenerated": "🔄",
-        "human_edit":          "✍️",
+        "project_created":       "🎵",
+        "ai_generated":          "🤖",
+        "section_locked":        "🔒",
+        "section_unlocked":      "🔓",
+        "section_regenerated":   "🔄",
+        "human_edit":            "✍️",
         "contribution_computed": "📊",
-        "passport_exported":   "🛂",
+        "passport_exported":     "🛂",
     }
     return icons.get(event_type, "◈")
 
@@ -210,6 +225,250 @@ def _run_generation(project) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 — Lock / Unlock action
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _toggle_lock(project, section_key: str, lock: bool) -> bool:
+    """Set or clear the lock on a single song section.
+
+    Mutates project.song["sections"][section_key] in-place, logs the
+    appropriate timeline event, increments project.version, and saves
+    atomically.  No Streamlit calls — this is pure state logic.
+
+    Args:
+        project:     The loaded Project object.
+        section_key: One of the five canonical section keys.
+        lock:        True to lock, False to unlock.
+
+    Returns:
+        True on success, False if save_project() raised (error already shown).
+    """
+    sections = project.song.get("sections", {})
+    section  = sections.get(section_key)
+    if section is None:
+        st.error(f"Section '{section_key}' not found in song.")
+        return False
+
+    if lock:
+        section["locked"]    = True
+        section["locked_at"] = datetime.now().isoformat()
+        section["locked_by"] = "Human"
+        event_type  = "section_locked"
+        description = f"Section locked: {section_key}"
+    else:
+        section["locked"]    = False
+        section["locked_at"] = None
+        section["locked_by"] = None
+        event_type  = "section_unlocked"
+        description = f"Section unlocked: {section_key}"
+
+    project.version += 1
+    append_event(
+        project.timeline,
+        event_type  = event_type,
+        actor       = "Human",
+        description = description,
+        metadata    = {"section_key": section_key},
+    )
+
+    try:
+        save_project(project)
+    except OSError as exc:
+        st.error(f"**Could not save lock state.**\n\n**Detail:** {exc}")
+        return False
+
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4 — Human edit action
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _save_human_edit(project, section_key: str, new_lyrics: str) -> bool:
+    """Persist a human-authored lyrics change for one section.
+
+    Mutates project.song["sections"][section_key] in-place:
+      - lyrics         → new_lyrics (stripped)
+      - provenance     → "ai_then_human" if previously AI-touched, else "human_written"
+      - last_edited_by → "Human"
+      - edit_count     → incremented by 1
+
+    Appends a "human_edit" timeline event, increments project.version, and
+    saves atomically.  No Streamlit calls — pure state logic.
+
+    Args:
+        project:     The loaded Project object.
+        section_key: One of the five canonical section keys.
+        new_lyrics:  The edited lyrics string (must be non-empty after strip).
+
+    Returns:
+        True on success, False if validation fails or save_project() raises.
+    """
+    clean = new_lyrics.strip()
+    if not clean:
+        st.error("Lyrics cannot be empty. Please enter some text before saving.")
+        return False
+
+    sections = project.song.get("sections", {})
+    section  = sections.get(section_key)
+    if section is None:
+        st.error(f"Section '{section_key}' not found in song.")
+        return False
+
+    if section.get("locked"):
+        st.error("Cannot edit a locked section. Unlock it first.")
+        return False
+
+    prev_provenance = section.get("provenance", "ai_generated")
+    chars_before    = len(section.get("lyrics", ""))
+
+    # Provenance transition
+    if prev_provenance in ("ai_generated", "ai_then_human"):
+        new_provenance = "ai_then_human"
+    else:
+        # already "human_written" or any unexpected value — keep human ownership
+        new_provenance = "human_written"
+
+    section["lyrics"]         = clean
+    section["provenance"]     = new_provenance
+    section["last_edited_by"] = "Human"
+    section["edit_count"]     = section.get("edit_count", 0) + 1
+
+    project.version += 1
+    append_event(
+        project.timeline,
+        event_type  = "human_edit",
+        actor       = "Human",
+        description = f"Section edited by human: {section_key}",
+        metadata    = {
+            "section_key":      section_key,
+            "prev_provenance":  prev_provenance,
+            "new_provenance":   new_provenance,
+            "chars_before":     chars_before,
+            "chars_after":      len(clean),
+        },
+    )
+
+    try:
+        save_project(project)
+    except OSError as exc:
+        st.error(f"**Edit saved in memory but could not be written to disk.**\n\n**Detail:** {exc}")
+        return False
+
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 — Targeted section regeneration action
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_section_regeneration(project, section_key: str) -> bool:
+    """Regenerate a single unlocked section and merge the result.
+
+    Workflow:
+      1. Snapshot locked-section lyrics hashes (pre-call).
+      2. Call ai_engine.regenerate_section() — returns new lyrics string.
+      3. Graft new lyrics into project.song (only target section changed).
+      4. Run post-graft drift check — abort + don't save if any locked
+         section's content changed.
+      5. Log section_regenerated timeline event.
+      6. Save atomically.
+
+    Args:
+        project:     The loaded Project object.
+        section_key: The section to regenerate (must be unlocked).
+
+    Returns:
+        True on success, False on any failure (error already shown).
+    """
+    sections = project.song.get("sections", {})
+    section  = sections.get(section_key)
+    if section is None:
+        st.error(f"Section '{section_key}' not found in song.")
+        return False
+
+    if section.get("locked"):
+        st.error("Cannot regenerate a locked section. Unlock it first.")
+        return False
+
+    # ── Step 1: snapshot locked sections before any API call ─────────────────
+    pre_snapshot = snapshot_locked_sections(project.song)
+
+    # ── Step 2: call the targeted regeneration engine ────────────────────────
+    with st.spinner(f"Regenerating {section_key.replace('_', ' ').title()} with Gemini…"):
+        try:
+            new_lyrics = regenerate_section(
+                section_key = section_key,
+                song        = project.song,
+            )
+        except SongGenerationError as exc:
+            st.error(
+                f"**Section regeneration failed.** Gemini returned an invalid "
+                f"response after 3 attempts.\n\n**Detail:** {exc}"
+            )
+            return False
+        except FileNotFoundError as exc:
+            st.error(
+                f"**Prompt template missing.**\n\n**Detail:** {exc}"
+            )
+            return False
+        except Exception as exc:
+            st.error(
+                f"**Unexpected error during regeneration.**\n\n**Detail:** {exc}"
+            )
+            return False
+
+    # ── Step 3: graft new lyrics into the target section only ─────────────────
+    # All other sections are untouched at this point.
+    section["lyrics"]         = new_lyrics
+    section["provenance"]     = "ai_generated"
+    section["last_edited_by"] = "AI"
+    section["edit_count"]     = 0
+    # locked / locked_at / locked_by remain as-is (section was unlocked)
+
+    # ── Step 4: post-graft drift check ────────────────────────────────────────
+    # If Gemini somehow changed a locked section's content the graft is already
+    # applied in memory — but we have NOT saved yet.  Detect drift and abort.
+    try:
+        assert_locked_sections_unchanged(project.song, pre_snapshot)
+    except DriftError as exc:
+        st.error(
+            f"**Drift detected — regeneration aborted.**\n\n"
+            f"A locked section's content changed unexpectedly. "
+            f"No changes have been saved.\n\n**Detail:** {exc}"
+        )
+        # In-memory state is now inconsistent with disk.  Force a reload by
+        # returning False — the caller will st.rerun() which reloads from disk.
+        return False
+
+    # ── Step 5: log timeline event ────────────────────────────────────────────
+    model_id = project.song.get("model_used", "gemini-2.5-flash")
+    project.version += 1
+    append_event(
+        project.timeline,
+        event_type  = "section_regenerated",
+        actor       = "AI",
+        description = f"Section regenerated: {section_key}",
+        metadata    = {
+            "section_key":    section_key,
+            "model_id":       model_id,
+            "prompt_version": "section_regen_v1",
+        },
+    )
+
+    # ── Step 6: save atomically ───────────────────────────────────────────────
+    try:
+        save_project(project)
+    except OSError as exc:
+        st.error(
+            f"**Section regenerated but could not be saved.**\n\n**Detail:** {exc}"
+        )
+        return False
+
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Song rendering helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -281,11 +540,50 @@ def _render_song_header(song: dict) -> None:
         )
 
 
-def _render_section_card(key: str, label: str, section: dict) -> None:
-    """Render one song section card with lyrics and provenance tag."""
-    lyrics    = section.get("lyrics", "")
+def _render_section_card(key: str, label: str, section: dict, project) -> None:
+    """Render one interactive section card with lock toggle, Edit, and Regenerate.
+
+    The lyrics block is rendered as styled HTML in view mode.  When the user
+    clicks "✏️ Edit", the card switches to an inline edit mode that shows a
+    st.text_area pre-filled with the current lyrics and Save / Cancel buttons.
+
+    Locked sections:
+      - Amber left border + 🔒 badge
+      - No Edit or Regenerate button (cannot modify while locked)
+      - Lock button shows "🔓 Unlock"
+
+    Unlocked sections (view mode):
+      - Default accent colour border
+      - "✏️ Edit" and "↻ Regenerate" action buttons below lyrics
+      - Lock button shows "🔒 Lock"
+
+    Unlocked sections (edit mode):
+      - st.text_area pre-filled with current lyrics
+      - "💾 Save Edit" and "✕ Cancel" buttons
+      - Saving calls _save_human_edit() then exits edit mode
+
+    Session-state keys:
+      - f"editing_{key}"  — bool: whether this section is in edit mode
+      - f"edit_draft_{key}" — not used (text_area manages its own state via key)
+
+    Args:
+        key:     Section key (e.g. "verse_1").
+        label:   Human-readable label (e.g. "Verse 1").
+        section: The section dict from project.song["sections"].
+        project: The full Project object — needed by all action callbacks.
+    """
+    lyrics     = section.get("lyrics", "")
     provenance = section.get("provenance", "ai_generated")
-    accent    = _SECTION_COLORS.get(key, "#52525B")
+    is_locked  = bool(section.get("locked"))
+
+    # Ensure per-section edit-mode flag exists in session state.
+    edit_key = f"editing_{key}"
+    if edit_key not in st.session_state:
+        st.session_state[edit_key] = False
+    is_editing = st.session_state[edit_key]
+
+    # Locked sections get an amber left border; unlocked keep their accent colour.
+    accent = "#F59E0B" if is_locked else _SECTION_COLORS.get(key, "#52525B")
 
     prov_label = {
         "ai_generated":   "AI Generated",
@@ -293,28 +591,124 @@ def _render_section_card(key: str, label: str, section: dict) -> None:
         "ai_then_human":  "AI + Human Edit",
     }.get(provenance, provenance)
 
-    # Escape and convert newlines → <br> for HTML rendering
-    lyrics_html = _html.escape(lyrics).replace("\n", "<br>")
-
-    st.markdown(
-        f"<div style='background:#18181B;border:1px solid #2D2D31;"
-        f"border-left:3px solid {accent};border-radius:9px;"
-        f"padding:1rem 1.1rem 0.9rem;margin-bottom:0.75rem;'>"
-        # header row
-        f"<div style='display:flex;justify-content:space-between;"
-        f"align-items:center;margin-bottom:0.65rem;'>"
-        f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.09em;color:{accent};'>{_html.escape(label)}</span>"
-        f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
-        f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
-        f"{_html.escape(prov_label)}</span>"
-        f"</div>"
-        # lyrics
-        f"<div style='font-size:0.9375rem;color:#C8C8CC;line-height:1.75;"
-        f"white-space:pre-wrap;'>{lyrics_html}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
+    # Build the lock badge shown in the card header.
+    lock_badge = (
+        "<span style='font-size:0.65rem;font-weight:700;color:#F59E0B;"
+        "background:#F59E0B18;border:1px solid #F59E0B40;border-radius:999px;"
+        "padding:0.1rem 0.5rem;margin-left:0.4rem;'>🔒 Locked</span>"
+        if is_locked else ""
     )
+
+    # ── Section header row: label + lock badge + provenance tag + lock btn ───
+    header_col, btn_col = st.columns([5, 1])
+
+    with header_col:
+        st.markdown(
+            f"<div style='background:#18181B;border:1px solid #2D2D31;"
+            f"border-left:3px solid {accent};border-radius:9px 9px 0 0;"
+            f"padding:0.75rem 1.1rem 0.5rem;margin-bottom:0;'>"
+            f"<div style='display:flex;justify-content:space-between;"
+            f"align-items:center;'>"
+            f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
+            f"letter-spacing:0.09em;color:{accent};'>"
+            f"{_html.escape(label)}{lock_badge}</span>"
+            f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
+            f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
+            f"{_html.escape(prov_label)}</span>"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    with btn_col:
+        # Lock / Unlock toggle — always visible regardless of edit mode.
+        if is_locked:
+            if st.button("🔓", key=f"lock_{key}", help="Unlock this section",
+                         use_container_width=True):
+                # Cancel any pending edit when unlocking too.
+                st.session_state[edit_key] = False
+                if _toggle_lock(project, key, lock=False):
+                    st.rerun()
+        else:
+            if st.button("🔒", key=f"lock_{key}", help="Lock this section",
+                         use_container_width=True):
+                # Cancel any pending edit when locking.
+                st.session_state[edit_key] = False
+                if _toggle_lock(project, key, lock=True):
+                    st.rerun()
+
+    # ── Body: edit mode or view mode ─────────────────────────────────────────
+    if is_editing and not is_locked:
+        # ── Edit mode: text_area + Save / Cancel ──────────────────────────────
+        st.markdown(
+            f"<div style='background:#18181B;border:1px solid #2D2D31;"
+            f"border-top:none;border-radius:0 0 0 0;"
+            f"padding:0.6rem 1.1rem 0.3rem;margin-bottom:0;'>"
+            f"<div style='font-size:0.72rem;color:#A1A1AA;margin-bottom:0.35rem;'>"
+            f"Editing <strong style='color:#FAFAFA;'>{_html.escape(label)}</strong> "
+            f"— make your changes below, then click Save.</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        draft = st.text_area(
+            label       = f"Lyrics — {label}",
+            value       = lyrics,
+            height      = max(120, min(500, lyrics.count("\n") * 22 + 120)),
+            key         = f"edit_draft_{key}",
+            label_visibility = "collapsed",
+        )
+        save_col, cancel_col, _ = st.columns([2, 2, 3])
+        with save_col:
+            if st.button("💾 Save Edit", key=f"edit_save_{key}",
+                         type="primary", use_container_width=True):
+                success = _save_human_edit(project, key, draft)
+                if success:
+                    st.session_state[edit_key] = False
+                    st.rerun()
+        with cancel_col:
+            if st.button("✕ Cancel", key=f"edit_cancel_{key}",
+                         use_container_width=True):
+                st.session_state[edit_key] = False
+                st.rerun()
+
+    else:
+        # ── View mode: styled HTML lyrics block ───────────────────────────────
+        lyrics_html = _html.escape(lyrics).replace("\n", "<br>")
+        st.markdown(
+            f"<div style='background:#18181B;border:1px solid #2D2D31;"
+            f"border-top:none;border-radius:0 0 9px 9px;"
+            f"padding:0.6rem 1.1rem 0.9rem;margin-bottom:0.1rem;'>"
+            f"<div style='font-size:0.9375rem;color:#C8C8CC;line-height:1.75;"
+            f"white-space:pre-wrap;'>{lyrics_html}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # ── Action buttons — only for unlocked sections ───────────────────────
+        if not is_locked:
+            edit_col, regen_col, _ = st.columns([2, 2, 3])
+            with edit_col:
+                if st.button(
+                    "✏️ Edit",
+                    key=f"edit_{key}",
+                    help=f"Manually edit the {label} lyrics",
+                    use_container_width=True,
+                ):
+                    st.session_state[edit_key] = True
+                    st.rerun()
+            with regen_col:
+                if st.button(
+                    "↻ Regenerate",
+                    key=f"regen_{key}",
+                    help=f"Ask Gemini to rewrite the {label} only",
+                    use_container_width=True,
+                ):
+                    success = _run_section_regeneration(project, key)
+                    if success:
+                        st.rerun()
+
+    # Bottom margin spacer
+    st.markdown("<div style='margin-bottom:0.65rem;'></div>",
+                unsafe_allow_html=True)
 
 
 def _render_timeline(timeline: list) -> None:
@@ -517,22 +911,9 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
 
-            # Render each section card in canonical order
+            # Render each section card in canonical order.
+            # Pass `project` so the lock/regen buttons can act on it directly.
             for section_key, section_label in _SECTION_ORDER:
                 section = project.song.get("sections", {}).get(section_key)
                 if section:
-                    _render_section_card(section_key, section_label, section)
-
-            # ── Regenerate button (placeholder for Phase 3) ───────────────────
-            st.markdown(
-                "<div style='margin-top:0.5rem;background:#18181B;"
-                "border:1px solid #2D2D31;border-left:3px solid #F59E0B;"
-                "border-radius:9px;padding:0.75rem 1rem;'>"
-                "<div style='font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-                "letter-spacing:0.08em;color:#F59E0B;margin-bottom:0.25rem;'>"
-                "Phase 3 · Section Locking &amp; Regeneration</div>"
-                "<div style='font-size:0.8rem;color:#A1A1AA;'>"
-                "Lock sections you love and regenerate only what you want to change.</div>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
+                    _render_section_card(section_key, section_label, section, project)

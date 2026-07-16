@@ -17,14 +17,35 @@ when requesting song generation. It owns the complete generation pipeline:
   9. Retry steps 3–8 up to MAX_RETRIES times on any failure.
  10. Raise SongGenerationError if all attempts are exhausted.
 
-Public interface
-────────────────
+Public interface (Phase 2)
+──────────────────────────
   generate_song(vibe: str, genre: str = "") -> dict
 
   Returns a complete, validated song dictionary ready to be merged into
   project.song. Raises SongGenerationError on unrecoverable failure.
+
+Public interface (Phase 3)
+──────────────────────────
+  regenerate_section(section_key: str, song: dict) -> str
+
+  Regenerates a single section's lyrics using a focused prompt that
+  includes only the locked sections as coherence context. Returns the
+  new lyrics string. Raises SongGenerationError on failure.
+
+  snapshot_locked_sections(song: dict) -> dict[str, str]
+
+  Returns a SHA-256 hex digest for every currently locked section's
+  lyrics. Used by the UI to detect drift before saving.
+
+  assert_locked_sections_unchanged(song: dict, snapshot: dict) -> None
+
+  Re-hashes locked sections and raises DriftError if any digest has
+  changed since the snapshot was taken.
+
+  DriftError  — raised when a locked section's content has changed.
 """
 
+import hashlib
 import json
 import re
 from datetime import datetime
@@ -45,6 +66,18 @@ class SongGenerationError(Exception):
     """
 
 
+class DriftError(Exception):
+    """Raised when a locked section's lyrics have changed after regeneration.
+
+    This is a safety guard: if Gemini's response somehow modified a locked
+    section's content (despite the prompt explicitly forbidding it), the
+    regeneration is aborted and this error is raised before any save occurs.
+
+    The message identifies which section(s) drifted so the UI can surface
+    a clear, actionable message to the user.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
@@ -60,10 +93,14 @@ _MODEL_NAME: str = "gemini-2.5-flash"
 # migrate older song objects without walking the full project schema_version.
 SONG_SCHEMA_VERSION: str = "1.0"
 
-# Absolute path to the production prompt template, resolved relative to
-# this file so it works correctly regardless of the working directory.
+# Absolute path to the full-song prompt template.
 _PROMPT_TEMPLATE_PATH: Path = (
     Path(__file__).parent.parent / "prompts" / "song_starter_v1.txt"
+)
+
+# Absolute path to the targeted section-regeneration prompt template.
+_SECTION_REGEN_TEMPLATE_PATH: Path = (
+    Path(__file__).parent.parent / "prompts" / "section_regen_v1.txt"
 )
 
 # The five section keys that every generated song must contain, in
@@ -75,6 +112,16 @@ _REQUIRED_SECTIONS: tuple[str, ...] = (
     "bridge",
     "outro",
 )
+
+# Human-readable labels for each section key — used when building the
+# locked-context block sent to Gemini during targeted regeneration.
+_SECTION_LABELS: dict[str, str] = {
+    "verse_1": "Verse 1",
+    "chorus":  "Chorus",
+    "verse_2": "Verse 2",
+    "bridge":  "Bridge",
+    "outro":   "Outro",
+}
 
 # Top-level string fields (excluding sections) that Gemini must produce.
 _REQUIRED_STRING_FIELDS: tuple[str, ...] = (
@@ -371,3 +418,282 @@ def generate_song(
         f"Song generation failed after {MAX_RETRIES} attempt(s). "
         f"Last error — {type(last_error).__name__}: {last_error}"
     )
+
+
+# =============================================================================
+# Phase 3 — Section Locking & Targeted Regeneration
+# =============================================================================
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 internal helpers
+# ---------------------------------------------------------------------------
+
+def _load_section_regen_template() -> str:
+    """Read and return the section-regeneration prompt template.
+
+    Raises:
+        FileNotFoundError: if section_regen_v1.txt does not exist.
+    """
+    if not _SECTION_REGEN_TEMPLATE_PATH.exists():
+        raise FileNotFoundError(
+            f"Section-regen prompt template not found at: {_SECTION_REGEN_TEMPLATE_PATH}\n"
+            "Ensure prompts/section_regen_v1.txt exists in the project root."
+        )
+    return _SECTION_REGEN_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
+def _build_section_context(song: dict, target_key: str) -> str:
+    """Build a formatted block of locked-section lyrics for the regen prompt.
+
+    Only sections that are locked AND are not the target section are included.
+    This gives Gemini enough context to write a coherent replacement without
+    leaking unlocked sections that may also be regenerated later.
+
+    If no locked sections exist (other than the target), returns an empty
+    string so the {locked_context} placeholder is simply omitted from the
+    rendered prompt — the song context block is sufficient.
+
+    Args:
+        song:       The full project.song dict (must have a "sections" key).
+        target_key: The section key being regenerated — excluded from context.
+
+    Returns:
+        A multi-line string ready to drop into the {locked_context} placeholder,
+        or an empty string when no locked context is available.
+    """
+    sections = song.get("sections", {})
+    lines: list[str] = []
+
+    for key in _REQUIRED_SECTIONS:
+        if key == target_key:
+            continue
+        sec = sections.get(key)
+        if not sec:
+            continue
+        if sec.get("locked"):
+            label  = _SECTION_LABELS.get(key, key)
+            lyrics = sec.get("lyrics", "").strip()
+            lines.append(f"LOCKED — {label}:\n{lyrics}")
+
+    if not lines:
+        return (
+            "LOCKED SECTIONS FOR CONTEXT: none — all other sections are unlocked "
+            "and may change in future cycles.\n\n"
+        )
+
+    header = (
+        "LOCKED SECTIONS FOR CONTEXT — these sections are approved and must NOT "
+        "be reproduced or modified. Use them only to ensure the new "
+        f"{_SECTION_LABELS.get(target_key, target_key)} is coherent:\n\n"
+    )
+    return header + "\n\n".join(lines) + "\n\n"
+
+
+def _build_section_regen_prompt(section_key: str, song: dict) -> str:
+    """Render the section-regeneration prompt template.
+
+    Args:
+        section_key: The section to regenerate (e.g. "verse_1").
+        song:        The full project.song dict — provides title, genre, etc.
+
+    Returns:
+        The fully rendered prompt string ready to send to Gemini.
+    """
+    template       = _load_section_regen_template()
+    section_label  = _SECTION_LABELS.get(section_key, section_key)
+    locked_context = _build_section_context(song, target_key=section_key)
+
+    return template.format(
+        title          = song.get("title",          ""),
+        genre          = song.get("genre",           ""),
+        style          = song.get("style",           ""),
+        mood           = song.get("mood",            ""),
+        vibe           = song.get("vibe",            ""),    # may be absent; "" is fine
+        section_key    = section_key,
+        section_label  = section_label,
+        locked_context = locked_context,
+    )
+
+
+def _validate_section_response(data: dict) -> None:
+    """Validate that Gemini returned exactly {"lyrics": "<non-empty string>"}.
+
+    Args:
+        data: A dict produced by json.loads() from Gemini's response.
+
+    Raises:
+        ValueError: with a descriptive message if validation fails.
+    """
+    if "lyrics" not in data:
+        raise ValueError(
+            f"Section response is missing the 'lyrics' key. "
+            f"Keys present: {list(data.keys())!r}"
+        )
+    lyrics = data["lyrics"]
+    if not isinstance(lyrics, str) or not lyrics.strip():
+        raise ValueError(
+            f"Section 'lyrics' must be a non-empty string, "
+            f"got {type(lyrics).__name__!r} = {lyrics!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 public API — targeted section regeneration
+# ---------------------------------------------------------------------------
+
+def regenerate_section(section_key: str, song: dict) -> str:
+    """Regenerate a single song section's lyrics via a focused Gemini prompt.
+
+    This is the Phase 3 counterpart to generate_song(). It generates new
+    lyrics for ONE section only, using the locked sections as coherence
+    context. Song-level metadata (title, mood, tempo, etc.) is passed as
+    context but is frozen — Gemini is instructed to produce only new lyrics.
+
+    The caller (view_project.py) is responsible for:
+      - Taking a pre-call snapshot with snapshot_locked_sections()
+      - Grafting the returned lyrics into project.song
+      - Running assert_locked_sections_unchanged() after grafting
+      - Saving the project only if the drift check passes
+
+    Args:
+        section_key: One of the five canonical section keys
+                     ("verse_1", "chorus", "verse_2", "bridge", "outro").
+        song:        The full project.song dict. Must have at minimum:
+                     "title", "genre", "style", "mood", and "sections".
+
+    Returns:
+        The new lyrics string (non-empty, unescaped plain text).
+
+    Raises:
+        ValueError:          if section_key is not one of _REQUIRED_SECTIONS.
+        SongGenerationError: if all MAX_RETRIES attempts fail.
+        FileNotFoundError:   if prompts/section_regen_v1.txt is missing.
+    """
+    # Guard: reject unknown section keys immediately — no point retrying.
+    if section_key not in _REQUIRED_SECTIONS:
+        raise ValueError(
+            f"Unknown section key: {section_key!r}. "
+            f"Must be one of: {list(_REQUIRED_SECTIONS)}"
+        )
+
+    prompt     = _build_section_regen_prompt(section_key, song)
+    last_error: Exception | None = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            # ── Step 1: call the API ──────────────────────────────────────────
+            raw_text = gemini_client.call_gemini(prompt)
+
+            # ── Step 2: strip markdown fences (defensive) ─────────────────────
+            cleaned = _strip_fences(raw_text)
+
+            # ── Step 3: parse JSON ────────────────────────────────────────────
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Section response is not valid JSON: {exc}\n"
+                    f"Raw response (first 500 chars): {cleaned[:500]!r}"
+                ) from exc
+
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"Expected a JSON object, got {type(data).__name__!r}"
+                )
+
+            # ── Step 4: validate — must be {"lyrics": "<non-empty>"} ──────────
+            _validate_section_response(data)
+
+            # Return the validated lyrics string.
+            return data["lyrics"].strip()
+
+        except Exception as exc:
+            last_error = exc
+            print(
+                f"[ai_engine] regenerate_section attempt {attempt}/{MAX_RETRIES} "
+                f"failed: {type(exc).__name__}: {exc}"
+            )
+
+    raise SongGenerationError(
+        f"Section regeneration failed after {MAX_RETRIES} attempt(s). "
+        f"Last error — {type(last_error).__name__}: {last_error}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 public API — drift-check utilities
+# ---------------------------------------------------------------------------
+
+def snapshot_locked_sections(song: dict) -> dict[str, str]:
+    """Return a SHA-256 hex digest for every currently locked section's lyrics.
+
+    This snapshot must be taken BEFORE calling regenerate_section() and
+    passed to assert_locked_sections_unchanged() AFTER the graft. If the
+    two snapshots differ, a DriftError is raised and the save is aborted.
+
+    Hashing only the lyrics content (not the full envelope) ensures that
+    metadata changes (e.g. stamping locked_at) do not produce false positives.
+
+    Args:
+        song: The full project.song dict (must have a "sections" key).
+
+    Returns:
+        A dict mapping section_key → sha256_hex for every locked section.
+        Returns an empty dict if no sections are locked.
+    """
+    snapshot: dict[str, str] = {}
+    sections = song.get("sections", {})
+    for key, sec in sections.items():
+        if sec.get("locked"):
+            lyrics = sec.get("lyrics", "")
+            snapshot[key] = hashlib.sha256(lyrics.encode("utf-8")).hexdigest()
+    return snapshot
+
+
+def assert_locked_sections_unchanged(song: dict, snapshot: dict) -> None:
+    """Verify that every locked section's lyrics match the pre-call snapshot.
+
+    Called after the merge graft and before save_project(). If any locked
+    section's content has changed — or if a section that was locked before
+    the API call is now missing — a DriftError is raised.
+
+    An empty snapshot (no locked sections) is a no-op: the function returns
+    immediately without raising.
+
+    Args:
+        song:     The full project.song dict after the merge graft.
+        snapshot: The dict returned by snapshot_locked_sections() before
+                  the regeneration call.
+
+    Raises:
+        DriftError: if any locked section's lyrics differ from the snapshot,
+                    or if a previously locked section is missing entirely.
+    """
+    if not snapshot:
+        return  # No locked sections — nothing to check.
+
+    sections = song.get("sections", {})
+    drifted: list[str] = []
+
+    for key, pre_hash in snapshot.items():
+        if key not in sections:
+            drifted.append(
+                f"{_SECTION_LABELS.get(key, key)!r} is missing after regeneration"
+            )
+            continue
+
+        lyrics    = sections[key].get("lyrics", "")
+        post_hash = hashlib.sha256(lyrics.encode("utf-8")).hexdigest()
+
+        if post_hash != pre_hash:
+            drifted.append(
+                f"{_SECTION_LABELS.get(key, key)!r} — content changed "
+                f"(pre={pre_hash[:8]}…, post={post_hash[:8]}…)"
+            )
+
+    if drifted:
+        raise DriftError(
+            f"Locked section(s) changed during regeneration — aborting save.\n"
+            f"Drifted: {'; '.join(drifted)}"
+        )
