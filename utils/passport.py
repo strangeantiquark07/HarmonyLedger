@@ -277,36 +277,43 @@ def build_passport_pdf(project) -> bytes:
     key      = song.get("key", "")
     time_sig = song.get("time_signature", "")
 
-    # "HARMONYLEDGER · CREATIVE PASSPORT" — small, upper-right corner watermark.
-    # Measured with reportlab's own stringWidth(): at 7.5pt this text needs
-    # ~56.5mm, so the column below is sized with headroom, not guessed —
-    # a narrower column was overflowing and silently wrapping to two lines.
+    # "HARMONYLEDGER · CREATIVE PASSPORT" — small kicker label, upper-right.
+    # (Tried inserting spaces between letters for a tracked-out look, but
+    # reportlab counts those spaces toward line width without rendering
+    # visible gaps at this size, so the label silently overflowed again —
+    # reverted. Plain text, sized with real headroom via stringWidth().)
     watermark_style = ParagraphStyle(
         "watermark", parent=styles["Normal"], fontSize=7,
-        textColor=colors.HexColor("#7A8AA0"),
-        fontName="Helvetica", leading=9, alignment=2,  # TA_RIGHT
+        textColor=colors.HexColor("#8DA0BA"),
+        fontName="Helvetica", leading=10, alignment=2,  # TA_RIGHT
     )
     title_style = ParagraphStyle(
-        "title", parent=styles["Normal"], fontSize=22, textColor=_WHITE,
-        fontName="Helvetica-Bold", leading=26, spaceBefore=0,
+        "title", parent=styles["Normal"], fontSize=21, textColor=_WHITE,
+        fontName="Helvetica-Bold", leading=24, spaceBefore=0,
     )
     subtitle_style = ParagraphStyle(
         "subtitle", parent=styles["Normal"], fontSize=9.5,
         textColor=colors.HexColor("#C8D4E3"),
-        fontName="Helvetica-Oblique", leading=13, spaceBefore=4,
+        fontName="Helvetica-Oblique", leading=13, spaceBefore=5,
     )
     band_meta_style = ParagraphStyle(
         "band_meta", parent=styles["Normal"], fontSize=8.5,
         textColor=colors.HexColor("#8FA4BA"),
-        leading=12, spaceBefore=6,
+        leading=12, spaceBefore=8,
     )
 
     meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
 
     band_text_cell = [Paragraph(project_title, title_style)]
     if ai_title and ai_title != project_title:
-        band_text_cell.append(Paragraph(f"\u201c{ai_title}\u201d", subtitle_style))
+        band_text_cell.append(Paragraph(f"“{ai_title}”", subtitle_style))
     if meta_parts:
+        # A hairline rule separates the title block from the metadata line,
+        # instead of both running together with only a font-size change.
+        band_text_cell.append(HRFlowable(
+            width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
+            spaceBefore=7, spaceAfter=7, hAlign="LEFT",
+        ))
         band_text_cell.append(Paragraph("  ·  ".join(meta_parts), band_meta_style))
 
     watermark_cell = [Paragraph("HARMONYLEDGER  ·  CREATIVE PASSPORT", watermark_style)]
@@ -318,10 +325,10 @@ def build_passport_pdf(project) -> bytes:
     band.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, -1), _NAVY),
         ("VALIGN",       (0, 0), (0, 0), "MIDDLE"),
-        ("VALIGN",       (1, 0), (1, 0), "TOP"),
+        ("VALIGN",       (1, 0), (1, 0), "MIDDLE"),
         ("ALIGN",        (1, 0), (1, 0), "RIGHT"),
-        ("TOPPADDING",   (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 14),
+        ("TOPPADDING",   (0, 0), (-1, -1), 16),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 16),
         ("LEFTPADDING",  (0, 0), (0, 0), 14),
         ("RIGHTPADDING", (1, 0), (1, 0), 12),
     ]))

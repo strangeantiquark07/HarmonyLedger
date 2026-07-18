@@ -966,20 +966,26 @@ def _render_contribution_dashboard(project) -> None:
         use_container_width=True,
         disabled=not has_song,
     ):
+        # Stamp the watermark into project.passport BEFORE building the PDF —
+        # build_passport_pdf() reads project.passport.get("watermark_id") to
+        # print it on the page, so generating the watermark afterward meant
+        # every exported PDF permanently showed "unassigned until export"
+        # even though the correct value was saved to the project file.
+        watermark = str(uuid4())
+        project.passport.update({
+            "exported_at":    datetime.now().isoformat(),
+            "export_format":  "pdf",
+            "watermark_id":   watermark,
+            # Never overwrite human-approved wording.
+            "transparency_statement": project.passport.get("transparency_statement", ""),
+            "authorship_line":        project.passport.get("authorship_line", ""),
+        })
+
         try:
             pdf_bytes = build_passport_pdf(project)
         except Exception as exc:
             st.error(f"**Passport generation failed.**\n\n{exc}")
         else:
-            watermark = str(uuid4())
-            project.passport.update({
-                "exported_at":    datetime.now().isoformat(),
-                "export_format":  "pdf",
-                "watermark_id":   watermark,
-                # Never overwrite human-approved wording.
-                "transparency_statement": project.passport.get("transparency_statement", ""),
-                "authorship_line":        project.passport.get("authorship_line", ""),
-            })
             project.version += 1
             append_event(
                 project.timeline,
