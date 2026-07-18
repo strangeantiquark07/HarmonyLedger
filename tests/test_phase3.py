@@ -140,6 +140,7 @@ def test_snapshot_returns_hashes() -> list[str]:
                 f"got {snap.get(key, 'MISSING')[:8] if snap.get(key) else 'MISSING'}…"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -157,6 +158,7 @@ def test_assert_unchanged_passes() -> list[str]:
     except Exception as exc:
         failures.append(f"Unexpected exception: {type(exc).__name__}: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -179,6 +181,7 @@ def test_assert_unchanged_raises_on_mutation() -> list[str]:
     except Exception as exc:
         failures.append(f"Unexpected exception instead of DriftError: {type(exc).__name__}: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -201,6 +204,7 @@ def test_assert_unchanged_raises_on_missing_section() -> list[str]:
     except Exception as exc:
         failures.append(f"Unexpected exception: {type(exc).__name__}: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -218,6 +222,7 @@ def test_empty_snapshot_is_noop() -> list[str]:
     except Exception as exc:
         failures.append(f"Unexpected exception on empty snapshot: {type(exc).__name__}: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -266,6 +271,7 @@ def test_toggle_lock_sets_fields() -> list[str]:
                 f"got {meta.get('section_key')!r}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -305,6 +311,7 @@ def test_toggle_unlock_clears_fields() -> list[str]:
     if not unlocked_events:
         failures.append("No 'section_unlocked' event found in timeline")
 
+    assert not failures, failures
     return failures
 
 
@@ -326,6 +333,7 @@ def test_lock_state_round_trips_storage() -> list[str]:
     except Exception as exc:
         failures.append(f"save_project() raised: {type(exc).__name__}: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     try:
@@ -333,6 +341,7 @@ def test_lock_state_round_trips_storage() -> list[str]:
     except Exception as exc:
         failures.append(f"load_project() raised: {type(exc).__name__}: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     sec = reloaded.song.get("sections", {}).get("bridge", {})
@@ -348,6 +357,7 @@ def test_lock_state_round_trips_storage() -> list[str]:
         failures.append("No 'section_locked' event found in reloaded timeline")
 
     _cleanup_project(project)
+    assert not failures, failures
     return failures
 
 
@@ -389,6 +399,7 @@ def test_graft_only_changes_target() -> list[str]:
         if song.get(field) != song_before.get(field):
             failures.append(f"Song-level field '{field}' was unexpectedly modified")
 
+    assert not failures, failures
     return failures
 
 
@@ -417,6 +428,7 @@ def test_graft_resets_provenance_envelope() -> list[str]:
     if sec["edit_count"] != 0:
         failures.append(f"edit_count should be 0, got {sec['edit_count']!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -448,9 +460,11 @@ def test_regenerate_section_integration() -> list[str]:
         )
     except SongGenerationError as exc:
         failures.append(f"generate_song() failed: {exc}")
+        assert not failures, failures
         return failures
     except Exception as exc:
         failures.append(f"generate_song() raised unexpected {type(exc).__name__}: {exc}")
+        assert not failures, failures
         return failures
 
     # ── Step 2: lock verse_1 and chorus ──────────────────────────────────────
@@ -476,13 +490,16 @@ def test_regenerate_section_integration() -> list[str]:
         new_lyrics = regenerate_section("bridge", song)
     except SongGenerationError as exc:
         failures.append(f"regenerate_section() raised SongGenerationError: {exc}")
+        assert not failures, failures
         return failures
     except Exception as exc:
         failures.append(f"regenerate_section() raised {type(exc).__name__}: {exc}")
+        assert not failures, failures
         return failures
 
     if not isinstance(new_lyrics, str) or not new_lyrics.strip():
         failures.append(f"regenerate_section() returned empty or non-string: {new_lyrics!r}")
+        assert not failures, failures
         return failures
 
     print(f"       [integration] New bridge lyrics (first 80 chars): {new_lyrics[:80]!r}…")
@@ -512,6 +529,7 @@ def test_regenerate_section_integration() -> list[str]:
             "expected a different result from Gemini"
         )
 
+    assert not failures, failures
     return failures
 
 
