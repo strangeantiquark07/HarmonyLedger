@@ -38,7 +38,7 @@ class GeminiAPIError(Exception):
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-_MODEL_NAME = "gemini-2.5-flash"
+_MODEL_NAME = "gemini-flash-latest"
 
 
 # ---------------------------------------------------------------------------

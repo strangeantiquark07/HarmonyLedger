@@ -86,7 +86,7 @@ class DriftError(Exception):
 MAX_RETRIES: int = 3
 
 # Model identifier — stamped onto every generated song dict.
-_MODEL_NAME: str = "gemini-2.5-flash"
+_MODEL_NAME: str = "gemini-flash-latest"
 
 # Song schema version — bumped here when the song JSON contract changes.
 # Stored in project.song["song_schema_version"] so Phase 3+ can detect and

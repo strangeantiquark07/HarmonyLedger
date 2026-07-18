@@ -186,7 +186,7 @@ def _run_generation(project) -> bool:
     project.song = {**song_dict, "genre": genre}
 
     # ── Add Gemini model as a collaborator (idempotent) ───────────────────────
-    model_id = song_dict.get("model_used", "gemini-2.5-flash")
+    model_id = song_dict.get("model_used", "gemini-flash-latest")
     already_listed = any(
         c.get("model_id") == model_id
         for c in project.collaborators
@@ -446,7 +446,7 @@ def _run_section_regeneration(project, section_key: str) -> bool:
         return False
 
     # ── Step 5: log timeline event ────────────────────────────────────────────
-    model_id = project.song.get("model_used", "gemini-2.5-flash")
+    model_id = project.song.get("model_used", "gemini-flash-latest")
     project.version += 1
     append_event(
         project.timeline,
