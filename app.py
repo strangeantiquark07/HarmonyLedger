@@ -152,6 +152,11 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
     padding: 0.4rem 0.5rem !important;
     white-space: nowrap !important;   /* never wrap a label to two lines */
 }
+/* Streamlit renders the label inside a <p> that sets its own white-space,
+   so the nowrap must be applied there too or labels still wrap. */
+[data-testid="stButton"] > button p {
+    white-space: nowrap !important;
+}
 [data-testid="stButton"] > button:hover {
     background: #2E2E34 !important;
     border-color: #52525B !important;

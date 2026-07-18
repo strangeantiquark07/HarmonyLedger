@@ -3,7 +3,7 @@ import json
 import streamlit as st
 from datetime import datetime, timezone
 
-from utils.storage import list_projects, PROJECTS_DIR
+from utils.storage import list_projects, delete_project, ProjectNotFoundError, PROJECTS_DIR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -98,12 +98,48 @@ def _project_card(p: dict, is_active: bool) -> bool:
         f"</div>",
         unsafe_allow_html=True,
     )
-    clicked = st.button(
-        "✓ Loaded" if is_active else "Open →",
-        key=f"open_{p['project_id']}",
-        use_container_width=True,
-        type="primary" if is_active else "secondary",
-    )
+    pid         = p["project_id"]
+    confirm_key = f"confirm_del_{pid}"
+
+    if st.session_state.get(confirm_key):
+        # ── Delete confirmation state ─────────────────────────────────────────
+        st.markdown(
+            f"<div style='font-size:0.75rem;color:#F59E0B;margin-bottom:0.25rem;'>"
+            f"Delete this project permanently?</div>",
+            unsafe_allow_html=True,
+        )
+        yes_col, no_col = st.columns(2)
+        with yes_col:
+            if st.button("🗑 Delete", key=f"del_yes_{pid}", use_container_width=True):
+                try:
+                    delete_project(pid)
+                except (ProjectNotFoundError, OSError) as exc:
+                    st.error(f"Could not delete: {exc}")
+                else:
+                    if st.session_state.get("active_project_id") == pid:
+                        st.session_state.active_project_id = None
+                    st.session_state[confirm_key] = False
+                    st.toast(f"'{p.get('name', 'Project')}' deleted.", icon="🗑")
+                    st.rerun()
+        with no_col:
+            if st.button("✕ Keep", key=f"del_no_{pid}", use_container_width=True):
+                st.session_state[confirm_key] = False
+                st.rerun()
+        return False
+
+    open_col, del_col = st.columns([5, 1])
+    with open_col:
+        clicked = st.button(
+            "✓ Loaded" if is_active else "Open →",
+            key=f"open_{pid}",
+            use_container_width=True,
+            type="primary" if is_active else "secondary",
+        )
+    with del_col:
+        if st.button("🗑", key=f"del_{pid}", help="Delete this project",
+                     use_container_width=True):
+            st.session_state[confirm_key] = True
+            st.rerun()
     return clicked
 
 

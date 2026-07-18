@@ -385,7 +385,9 @@ def build_passport_pdf(project) -> bytes:
             sec_data.append(["", _SECTION_LABELS.get(sec_key, sec_key), prov, by])
             swatches.append(_SECTION_COLORS.get(sec_key, _SUBTLE))
 
-        col_widths = [4 * mm, 41 * mm, 65 * mm, 40 * mm]
+        # Widths sum to 170mm — the full frame width — so the table's right
+        # edge aligns with the header band and the other tables.
+        col_widths = [4 * mm, 45 * mm, 75 * mm, 46 * mm]
         sec_table = Table(sec_data, colWidths=col_widths, repeatRows=1)
         style_cmds = [
             ("BACKGROUND",   (0, 0), (-1, 0), _NAVY),
@@ -413,16 +415,20 @@ def build_passport_pdf(project) -> bytes:
     omitted = len(timeline) - len(visible_events)
 
     if visible_events:
+        # Rows are renumbered 1..N for print — the raw seq numbers have gaps
+        # where filtered bookkeeping events sat, which reads as an error.
         tl_data = [["#", "Event", "Actor", "Description", "When"]]
-        for event in visible_events:
+        for row_no, event in enumerate(visible_events, start=1):
             tl_data.append([
-                str(event.get("seq", "?")),
+                str(row_no),
                 str(event.get("event_type", "")).replace("_", " "),
                 str(event.get("actor", "")),
                 str(event.get("description", ""))[:58],
                 _fmt_ts(event.get("timestamp", "")),
             ])
-        col_widths = [8 * mm, 34 * mm, 16 * mm, 74 * mm, 30 * mm]
+        # Sums to 170mm (full frame width); "When" gets 36mm so a full
+        # "Jul 18, 2026 · 9:00 PM" timestamp fits without clipping.
+        col_widths = [8 * mm, 34 * mm, 16 * mm, 76 * mm, 36 * mm]
         tl_table = Table(tl_data, colWidths=col_widths, repeatRows=1)
         style_cmds = [
             ("BACKGROUND",   (0, 0), (-1, 0), _NAVY),

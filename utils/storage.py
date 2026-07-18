@@ -170,6 +170,20 @@ def load_project(project_id: str) -> Project:
     return project
 
 
+def delete_project(project_id: str) -> None:
+    """
+    Permanently delete a project's JSON file from disk.
+
+    Raises:
+        ProjectNotFoundError: if no file exists for *project_id*.
+        OSError:              if the file exists but cannot be removed.
+    """
+    file_path = PROJECTS_DIR / f"{project_id}.json"
+    if not file_path.exists():
+        raise ProjectNotFoundError(f"No project file found for id '{project_id}'.")
+    file_path.unlink()
+
+
 def list_projects() -> tuple[list[dict], list[dict]]:
     """
     Return project summaries and any problem files found in the projects directory.

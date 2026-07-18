@@ -697,7 +697,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                     st.rerun()
             with cols[1]:
                 if st.button(
-                    "↻ Regenerate",
+                    "↻ Regenerate",   # non-breaking space — label can never wrap
                     key=f"regen_{key}",
                     help="Rewrite this section",
                     use_container_width=True,
