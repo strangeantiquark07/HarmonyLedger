@@ -2,7 +2,7 @@
 
 **The Creative Passport for Human–AI Songwriting**
 
-HarmonyLedger is an AI songwriting studio that documents who wrote what — so a human creator can prove they stayed the author while an AI co-wrote alongside them. Every generation, lock, and regeneration is logged, and the finished song exports as a **Creative Passport**: a timeline, a contribution split, and a transparency statement the creator can attach to their work.
+HarmonyLedger is an AI songwriting studio that keeps a record of who wrote what, so a creator can prove they stayed the author even with an AI co-writing alongside them. Every generation, lock, and regeneration gets logged. The finished song exports as a **Creative Passport**: a timeline, a contribution split, and a transparency statement you can attach to your work.
 
 ---
 
@@ -24,30 +24,30 @@ HarmonyLedger is an AI songwriting studio that documents who wrote what — so a
 
 ## The Problem
 
-AI can now write a whole song from a one-line prompt. That creates a quiet crisis for creators: when a musician submits AI-assisted work, they can't cleanly show which parts are theirs. Rights bodies, labels, sync-licensing buyers, and collaborators increasingly ask *"how much of this did a human actually write?"* — and creators have no honest way to answer.
+AI can write a whole song from a one-line prompt now. That's a problem for creators: when a musician submits AI-assisted work, they can't cleanly show which parts are theirs. Rights bodies, labels, sync-licensing buyers, and collaborators keep asking *"how much of this did a human actually write?"*, and there's no honest way to answer.
 
-Most AI songwriting tools also regenerate the entire song on every click, quietly turning the creator into a passive selector rather than an author.
+Most AI songwriting tools also regenerate the entire song on every click, which turns the creator into a passive selector instead of an author.
 
-**HarmonyLedger addresses the trust gap, not just the generation gap.**
+HarmonyLedger is built to close that trust gap, not just to generate more songs.
 
 ---
 
 ## Features
 
-- 🎼 **Vibe-to-song generation** — turn a one-line prompt into a structured song (title, verse/chorus/bridge, mood, tempo, style, genre) using using Google Gemini.
-- 🔒 **Lock & regenerate** — lock the sections you're happy with and regenerate only the one you're not. A drift check guarantees locked sections never change.
-- 📜 **Unified creative timeline** — every human and AI action (generate, lock, regenerate, accept, reject, edit) is logged in one place.
-- 📊 **Contribution dashboard** — a deterministic, defensible human-vs-AI contribution split, computed straight from the timeline.
-- 🪪 **Creative Passport export** — a downloadable PDF with the song's timeline, contribution split, and an authorship transparency statement.
+- 🎼 **Vibe-to-song generation** — turn a one-line prompt into a structured song (title, verse/chorus/bridge, mood, tempo, style, genre) with Google Gemini.
+- 🔒 **Lock & regenerate** — lock the sections you like and regenerate only the one you don't. A drift check makes sure locked sections never change.
+- 📜 **Unified creative timeline** — every human and AI action (generate, lock, regenerate, accept, reject, edit) logged in one place.
+- 📊 **Contribution dashboard** — a human-vs-AI split computed straight from the timeline, not guessed by hand.
+- 🪪 **Creative Passport export** — a downloadable PDF with the song's timeline, contribution split, and a transparency statement.
 - 🔊 **Audio preview** *(stretch goal)* — spoken preview of the chorus via text-to-speech, optionally over an ambient bed.
 
 ---
 
 ## How It Works
 
-Everything in HarmonyLedger is a view of **one JSON file** per project. The song, the timeline, the contribution split, and the exported passport are all just different representations of that single source of truth — which keeps the app easy to debug and keeps the app layer cleanly separated from the AI layer.
+Everything in HarmonyLedger is a view of **one JSON file** per project. The song, the timeline, the contribution split, and the exported passport are all just different representations of that single source of truth. That keeps the app easy to debug and keeps the app layer cleanly separated from the AI layer.
 
-The signature feature is **lock and regenerate**: when you regenerate a section, only that section (plus surrounding context) is sent to the model. The response is merged back into the project JSON, and a drift check compares every other section against its saved copy — rejecting the result if anything that should have stayed frozen changed.
+The core feature is **lock and regenerate**. When you regenerate a section, only that section (plus surrounding context) gets sent to the model. The response merges back into the project JSON, and a drift check compares every other section against its saved copy, rejecting the result if anything that should've stayed frozen changed.
 
 ---
 
@@ -94,11 +94,10 @@ pip install -r requirements.txt
 
 ### Configuration
 
-Create a `.env` file with your gemini api key credentials:
+Create a `.env` file with your Gemini API key:
 
 ```
 GEMINI_API_KEY=your_api_key
-
 ```
 
 ### Run the app
@@ -122,12 +121,12 @@ streamlit run app.py
 
 ## Contribution Methodology
 
-Contribution is computed deterministically from the timeline log — never estimated by hand — as two numbers:
+Contribution is computed from the timeline log, never estimated by hand. Two numbers come out of it:
 
-- **Section authorship split** — each section is tagged human-written (100% human), AI-generated and untouched (100% AI), or AI-generated then human-edited (50/50); summed across sections for a headline percentage.
-- **Creative-direction split** — every lock, regenerate, accept, and reject is counted as a human decision, since steering the AI is itself a form of authorship.
+- **Section authorship split** — each section is tagged human-written (100% human), AI-generated and untouched (100% AI), or AI-generated then human-edited (50/50), summed across sections for a headline percentage.
+- **Creative-direction split** — every lock, regenerate, accept, and reject counts as a human decision, since steering the AI is itself a form of authorship.
 
-Both numbers are pulled from the same timeline, so the dashboard and the exported Passport always agree.
+Both numbers come from the same timeline, so the dashboard and the exported Passport can't disagree.
 
 ---
 
@@ -144,16 +143,16 @@ Both numbers are pulled from the same timeline, so the dashboard and the exporte
 
 ## Built With IBM Bob
 
-This project was built end-to-end using **IBM Bob**, IBM's agentic coding assistant, across the full development lifecycle:
+This project was built with **IBM Bob**, IBM's agentic coding assistant, across the full development lifecycle:
 
 | Stage | What Bob Did |
 |---|---|
 | Planning | Application architecture, JSON schema design, AI integration workflow, regeneration pipeline design |
-| Development | GGoogle Gemini API integration, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
+| Development | Google Gemini API integration, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
 | Testing & QA | Regeneration test harness, unit/integration tests, edge-case hunting |
 | Documentation | README, architecture notes, docstrings, demo narrative |
 
-A running **Bob decision log** (screenshots + what was asked/produced/changed) is maintained throughout the build for full transparency.
+We kept a running Bob decision log throughout the build (screenshots plus what was asked, produced, and changed) for transparency.
 
 ---
 

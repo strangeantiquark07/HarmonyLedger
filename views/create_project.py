@@ -1,7 +1,7 @@
 import streamlit as st
 
 from utils.models import Project, PROJECT_NAME_MAX_LENGTH
-from utils.storage import save_project, list_projects
+from utils.storage import save_project, list_projects, ProjectConflictError
 from utils.timeline import append_event
 from utils.presets import GENRE_PRESETS, VIBE_MODIFIERS
 
@@ -290,8 +290,8 @@ def render() -> None:
         )
 
         try:
-            save_project(project)
-        except OSError as exc:
+            save_project(project, check_conflict=True)
+        except (OSError, ProjectConflictError) as exc:
             st.session_state.cp_error = f"Could not save project: {exc}"
             st.rerun()
             return

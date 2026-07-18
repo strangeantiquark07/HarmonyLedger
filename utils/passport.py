@@ -268,47 +268,62 @@ def build_passport_pdf(project) -> bytes:
     )
 
     # ── Header band ───────────────────────────────────────────────────────────
-    song     = project.song or {}
-    title    = song.get("title") or project.name
+    song           = project.song or {}
+    ai_title       = song.get("title", "")          # creative title from Gemini
+    project_title  = project.name                    # user's own project name
     genre    = song.get("genre", "")
     mood     = song.get("mood", "")
     tempo    = song.get("tempo", "")
     key      = song.get("key", "")
     time_sig = song.get("time_signature", "")
 
-    eyebrow_style = ParagraphStyle(
-        "eyebrow", parent=styles["Normal"], fontSize=8.5, textColor=_WHITE,
-        fontName="Helvetica-Bold", leading=11,
+    # "HARMONYLEDGER · CREATIVE PASSPORT" — small, upper-right corner watermark.
+    # Measured with reportlab's own stringWidth(): at 7.5pt this text needs
+    # ~56.5mm, so the column below is sized with headroom, not guessed —
+    # a narrower column was overflowing and silently wrapping to two lines.
+    watermark_style = ParagraphStyle(
+        "watermark", parent=styles["Normal"], fontSize=7,
+        textColor=colors.HexColor("#7A8AA0"),
+        fontName="Helvetica", leading=9, alignment=2,  # TA_RIGHT
     )
     title_style = ParagraphStyle(
-        "title", parent=styles["Normal"], fontSize=19, textColor=_WHITE,
-        fontName="Helvetica-Bold", leading=23, spaceBefore=2,
+        "title", parent=styles["Normal"], fontSize=22, textColor=_WHITE,
+        fontName="Helvetica-Bold", leading=26, spaceBefore=0,
+    )
+    subtitle_style = ParagraphStyle(
+        "subtitle", parent=styles["Normal"], fontSize=9.5,
+        textColor=colors.HexColor("#C8D4E3"),
+        fontName="Helvetica-Oblique", leading=13, spaceBefore=4,
     )
     band_meta_style = ParagraphStyle(
-        "band_meta", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#B9C2D0"),
-        leading=12, spaceBefore=3,
+        "band_meta", parent=styles["Normal"], fontSize=8.5,
+        textColor=colors.HexColor("#8FA4BA"),
+        leading=12, spaceBefore=6,
     )
 
     meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
-    band_text_cell = [
-        Paragraph("HARMONYLEDGER  ·  CREATIVE PASSPORT", eyebrow_style),
-        Paragraph(title, title_style),
-    ]
+
+    band_text_cell = [Paragraph(project_title, title_style)]
+    if ai_title and ai_title != project_title:
+        band_text_cell.append(Paragraph(f"\u201c{ai_title}\u201d", subtitle_style))
     if meta_parts:
         band_text_cell.append(Paragraph("  ·  ".join(meta_parts), band_meta_style))
 
+    watermark_cell = [Paragraph("HARMONYLEDGER  ·  CREATIVE PASSPORT", watermark_style)]
+
     band = Table(
-        [[band_text_cell, _seal_drawing(16)]],
-        colWidths=[A4[0] - 40 * mm - 22 * mm, 22 * mm],
+        [[band_text_cell, watermark_cell]],
+        colWidths=[A4[0] - 40 * mm - 66 * mm, 66 * mm],
     )
     band.setStyle(TableStyle([
         ("BACKGROUND",   (0, 0), (-1, -1), _NAVY),
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",        (1, 0), (1, 0), "CENTER"),
+        ("VALIGN",       (0, 0), (0, 0), "MIDDLE"),
+        ("VALIGN",       (1, 0), (1, 0), "TOP"),
+        ("ALIGN",        (1, 0), (1, 0), "RIGHT"),
         ("TOPPADDING",   (0, 0), (-1, -1), 14),
         ("BOTTOMPADDING",(0, 0), (-1, -1), 14),
         ("LEFTPADDING",  (0, 0), (0, 0), 14),
-        ("RIGHTPADDING", (1, 0), (1, 0), 14),
+        ("RIGHTPADDING", (1, 0), (1, 0), 12),
     ]))
     story.append(band)
     story.append(Spacer(1, 6 * mm))

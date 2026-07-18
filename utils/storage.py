@@ -79,15 +79,22 @@ def save_project(project: Project, *, check_conflict: bool = False) -> Path:
 
     Args:
         project:        The Project to save.
-        check_conflict: When True, read the on-disk version before writing and
-                        raise ProjectConflictError if it differs from
-                        project.version.  Protects against last-write-wins
-                        overwrites in concurrent sessions.
+        check_conflict: When True, compare the on-disk version against the
+                        version this project was loaded with (its baseline —
+                        see load_project()), and raise ProjectConflictError if
+                        someone else has saved a newer version since.  NOTE:
+                        this deliberately does NOT compare against
+                        project.version directly — callers increment
+                        project.version *before* calling save_project() for
+                        the write they're about to make, so project.version
+                        is always one ahead of disk in the normal, no-conflict
+                        case. Comparing against the load-time baseline instead
+                        is what makes this only fire on a real conflict.
 
     Returns the path the file was written to.
     Raises OSError if the write fails (e.g. permissions, disk full).
-    Raises ProjectConflictError if check_conflict is True and the on-disk
-        version has advanced beyond the in-memory project.
+    Raises ProjectConflictError if check_conflict is True and another session
+        has saved a version newer than this project's load-time baseline.
     """
     file_path = PROJECTS_DIR / f"{project.project_id}.json"
 
@@ -99,10 +106,15 @@ def save_project(project: Project, *, check_conflict: bool = False) -> Path:
         except (json.JSONDecodeError, OSError, ValueError):
             disk_version = None  # Corrupt/missing — let the write proceed.
 
-        if disk_version is not None and disk_version != project.version:
+        # Falls back to project.version for a Project that was never loaded
+        # via load_project() (e.g. a freshly constructed one, or in tests) —
+        # there's no real baseline to compare against in that case.
+        baseline_version = getattr(project, "_baseline_version", project.version)
+
+        if disk_version is not None and disk_version != baseline_version:
             raise ProjectConflictError(
                 f"Project '{project.name}' has been modified in another session "
-                f"(disk version {disk_version}, your version {project.version}). "
+                f"(disk version {disk_version}, your loaded version {baseline_version}). "
                 "Reload the project before saving.",
                 disk_version=disk_version,
             )
@@ -117,6 +129,10 @@ def save_project(project: Project, *, check_conflict: bool = False) -> Path:
 
     # Only update the object once the write has succeeded.
     project.last_modified_at = new_modified
+    # This save's version is now the on-disk truth — later saves in the same
+    # session (e.g. a second autosave later in the same script run) should be
+    # compared against it, not the original load-time baseline.
+    project._baseline_version = project.version
 
     return file_path
 
@@ -166,6 +182,12 @@ def load_project(project_id: str) -> Project:
     # Auto-persist migrations without touching last_modified_at.
     if data.get("schema_version", 1) < project.schema_version:
         _write_project_data(project.to_dict(), file_path)
+
+    # Record the version this project was loaded with, so a later
+    # save_project(check_conflict=True) can tell "someone else saved a newer
+    # version since I loaded this" apart from "I've incremented my own copy
+    # in memory before writing it back" (see save_project()'s docstring).
+    project._baseline_version = project.version
 
     return project
 

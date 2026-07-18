@@ -51,20 +51,37 @@ st.markdown("""
 /* ═══════════════════════════════════════════════════════
    1. KILL THE WHITE STRIP / STREAMLIT CHROME
    ═══════════════════════════════════════════════════════ */
-/* Top toolbar & deploy badge */
-[data-testid="stToolbar"],
+/* Deploy badge, running-man status, and the app-menu footer */
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
-header[data-testid="stHeader"],
 #MainMenu,
 footer {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
 }
+/* The header/toolbar must stay mounted (not display:none) — Streamlit renders
+   the sidebar's expand arrow (stExpandSidebarButton) INSIDE the toolbar, and
+   a display:none ancestor unmounts its children entirely, breaking the only
+   way to reopen a collapsed sidebar. Instead: keep the toolbar in the layout
+   but shrink it to just the expand button and blend it into the background,
+   and hide its other children (deploy button, "..." menu) individually. */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 2.75rem !important;
+}
+[data-testid="stToolbar"] {
+    background: transparent !important;
+}
+[data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"] {
+    display: none !important;
+}
 /* Remove the default top padding that the hidden header leaves */
 .block-container {
-    padding-top: 1.5rem !important;
+    /* Header is now a real 2.75rem-tall element (not display:none), so this
+       only needs a little breathing room, not a full offset for it. */
+    padding-top: 0.6rem !important;
     padding-bottom: 2rem !important;
     padding-left: 2.25rem !important;
     padding-right: 2.25rem !important;
@@ -141,7 +158,7 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
 /* ═══════════════════════════════════════════════════════
    5. BUTTONS
    ═══════════════════════════════════════════════════════ */
-[data-testid="stButton"] > button {
+[data-testid="stButton"] button {
     border-radius: 7px !important;
     font-weight: 500 !important;
     font-size: 0.875rem !important;
@@ -152,28 +169,32 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
     padding: 0.4rem 0.5rem !important;
     white-space: nowrap !important;   /* never wrap a label to two lines */
 }
-/* Streamlit renders the label inside a <p> that sets its own white-space,
-   so the nowrap must be applied there too or labels still wrap. */
-[data-testid="stButton"] > button p {
+/* Streamlit's inner label <p> sets break-word styles of its own, so the
+   no-wrap rules must be applied there directly.  NOTE: descendant selector
+   ("stButton button", not "> button") is required — buttons with help=
+   tooltips are nested inside an extra stTooltipHoverTarget wrapper div. */
+[data-testid="stButton"] button p {
     white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
 }
-[data-testid="stButton"] > button:hover {
+[data-testid="stButton"] button:hover {
     background: #2E2E34 !important;
     border-color: #52525B !important;
     color: #FAFAFA !important;
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
 }
-[data-testid="stButton"] > button:active {
+[data-testid="stButton"] button:active {
     transform: translateY(0) !important;
 }
-[data-testid="stButton"] > button[kind="primary"] {
+[data-testid="stButton"] button[kind="primary"] {
     background: #1DB954 !important;
     border-color: #1DB954 !important;
     color: #0A0A0B !important;
     font-weight: 600 !important;
 }
-[data-testid="stButton"] > button[kind="primary"]:hover {
+[data-testid="stButton"] button[kind="primary"]:hover {
     background: #1fcc5e !important;
     border-color: #1fcc5e !important;
     box-shadow: 0 2px 12px rgba(29,185,84,0.35) !important;
@@ -461,22 +482,6 @@ with st.sidebar:
         <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Page header  — branding strip shown on every page
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.markdown("""
-<div style="margin-bottom:0.1rem;">
-    <div style="font-size:2.1rem;font-weight:800;color:#FAFAFA;
-                letter-spacing:-0.04em;line-height:1.15;">🎵 HarmonyLedger</div>
-    <div style="font-size:0.9rem;color:#8E8E96;font-weight:400;
-                margin-top:0.3rem;letter-spacing:0.01em;">
-        The Creative Passport for Human-AI Songwriting
-    </div>
-</div>
-<hr style="margin:0.75rem 0 1.35rem;border-color:#2D2D31;">
-""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Router  — guard ensures page is always a known value before delegating

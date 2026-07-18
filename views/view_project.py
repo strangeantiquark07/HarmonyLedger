@@ -42,7 +42,10 @@ from utils.ai_engine import (
 )
 from utils.contribution import compute_contribution
 from utils.passport import build_passport_pdf
-from utils.storage import load_project, save_project, ProjectNotFoundError, ProjectCorruptedError
+from utils.storage import (
+    load_project, save_project, ProjectNotFoundError, ProjectCorruptedError,
+    ProjectConflictError,
+)
 from utils.timeline import append_event
 
 
@@ -220,8 +223,8 @@ def _run_generation(project) -> bool:
 
     # ── Save atomically ───────────────────────────────────────────────────────
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Song generated but could not be saved.**\n\n**Detail:** {exc}")
         return False
 
@@ -276,8 +279,8 @@ def _toggle_lock(project, section_key: str, lock: bool) -> bool:
     )
 
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Could not save lock state.**\n\n**Detail:** {exc}")
         return False
 
@@ -354,8 +357,8 @@ def _save_human_edit(project, section_key: str, new_lyrics: str) -> bool:
     )
 
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Edit saved in memory but could not be written to disk.**\n\n**Detail:** {exc}")
         return False
 
@@ -462,8 +465,8 @@ def _run_section_regeneration(project, section_key: str) -> bool:
 
     # ── Step 6: save atomically ───────────────────────────────────────────────
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(
             f"**Section regenerated but could not be saved.**\n\n**Detail:** {exc}"
         )
@@ -549,7 +552,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
 
     Header and lyrics are emitted as ONE continuous HTML card (same width,
     joined corners), with every action button in a single row below it.  When
-    the user clicks "✏️ Edit", the card switches to an inline edit mode that
+    the user clicks "✏️", the card switches to an inline edit mode that
     shows a st.text_area pre-filled with the lyrics and Save / Cancel buttons.
 
     Locked sections:
@@ -676,7 +679,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
         if is_locked:
             cols = st.columns(4)
             with cols[0]:
-                if st.button("🔓 Unlock", key=f"lock_{key}",
+                if st.button("🔓", key=f"lock_{key}",
                              help="Unlock this section",
                              use_container_width=True):
                     st.session_state[edit_key] = False
@@ -688,7 +691,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
 
             with cols[0]:
                 if st.button(
-                    "✏️ Edit",
+                    "✏️",
                     key=f"edit_{key}",
                     help="Manually edit the lyrics",
                     use_container_width=True,
@@ -697,7 +700,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                     st.rerun()
             with cols[1]:
                 if st.button(
-                    "↻ Regenerate",   # non-breaking space — label can never wrap
+                    "↻",
                     key=f"regen_{key}",
                     help="Rewrite this section",
                     use_container_width=True,
@@ -709,28 +712,41 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
             if show_accept_reject:
                 with cols[2]:
                     if st.button(
-                        "✓ Accept",
+                        "✓",
                         key=f"accept_{key}",
                         help="Approve this draft",
                         use_container_width=True,
                     ):
-                        project.version += 1
-                        append_event(
-                            project.timeline,
-                            event_type  = "section_accepted",
-                            actor       = "Human",
-                            description = f"Section accepted: {key}",
-                            metadata    = {"section_key": key},
+                        # Idempotency guard: if this section's most recent
+                        # event is already an acceptance, repeat clicks are a
+                        # no-op. Without this, mashing Accept could trivially
+                        # inflate the direction_score in the Passport, since
+                        # it counts raw event frequency (utils/contribution.py).
+                        last_for_section = next(
+                            (e for e in reversed(project.timeline)
+                             if e.get("metadata", {}).get("section_key") == key),
+                            None,
                         )
-                        try:
-                            save_project(project)
-                        except OSError as exc:
-                            st.error(f"**Could not save after accept.**\n\n{exc}")
+                        if last_for_section and last_for_section.get("event_type") == "section_accepted":
+                            st.toast("Already accepted — no change needed.", icon="✅")
                         else:
-                            st.rerun()
+                            project.version += 1
+                            append_event(
+                                project.timeline,
+                                event_type  = "section_accepted",
+                                actor       = "Human",
+                                description = f"Section accepted: {key}",
+                                metadata    = {"section_key": key},
+                            )
+                            try:
+                                save_project(project, check_conflict=True)
+                            except (OSError, ProjectConflictError) as exc:
+                                st.error(f"**Could not save after accept.**\n\n{exc}")
+                            else:
+                                st.rerun()
                 with cols[3]:
                     if st.button(
-                        "✕ Reject",
+                        "✕",
                         key=f"reject_{key}",
                         help="Reject and regenerate",
                         use_container_width=True,
@@ -746,8 +762,8 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                         # Save the rejection first — the human's decision must
                         # survive even if the regeneration call below fails.
                         try:
-                            save_project(project)
-                        except OSError as exc:
+                            save_project(project, check_conflict=True)
+                        except (OSError, ProjectConflictError) as exc:
                             st.error(f"**Could not save rejection.**\n\n{exc}")
                         # Rejection immediately triggers regeneration.
                         success = _run_section_regeneration(project, key)
@@ -755,7 +771,7 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                             st.rerun()
 
             with cols[4] if show_accept_reject else cols[2]:
-                if st.button("🔒 Lock", key=f"lock_{key}",
+                if st.button("🔒", key=f"lock_{key}",
                              help="Freeze this section",
                              use_container_width=True):
                     st.session_state[edit_key] = False
@@ -899,8 +915,8 @@ def _render_contribution_dashboard(project) -> None:
             },
         )
         try:
-            save_project(project)
-        except OSError as exc:
+            save_project(project, check_conflict=True)
+        except (OSError, ProjectConflictError) as exc:
             st.warning(f"Could not cache contribution data: {exc}")
         cached = result
 
@@ -976,8 +992,8 @@ def _render_contribution_dashboard(project) -> None:
                 },
             )
             try:
-                save_project(project)
-            except OSError as exc:
+                save_project(project, check_conflict=True)
+            except (OSError, ProjectConflictError) as exc:
                 st.warning(f"Passport built but could not save metadata: {exc}")
 
             file_name = f"{project.name.replace(' ', '_')}_passport.pdf"
