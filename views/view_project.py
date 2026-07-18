@@ -40,6 +40,8 @@ from utils.ai_engine import (
     SongGenerationError,
     DriftError,
 )
+from utils.contribution import compute_contribution
+from utils.passport import build_passport_pdf
 from utils.storage import load_project, save_project, ProjectNotFoundError, ProjectCorruptedError
 from utils.timeline import append_event
 
@@ -133,6 +135,8 @@ def _event_icon(event_type: str) -> str:
         "section_unlocked":      "🔓",
         "section_regenerated":   "🔄",
         "human_edit":            "✍️",
+        "section_accepted":      "✓",
+        "section_rejected":      "✕",
         "contribution_computed": "📊",
         "passport_exported":     "🛂",
     }
@@ -706,6 +710,52 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                     if success:
                         st.rerun()
 
+            # ── Accept / Reject — only for AI-touched sections ────────────────
+            # Accept: records a human decision without changing lyrics/provenance.
+            # Reject: records the decision then immediately triggers regeneration.
+            # Not shown for human_written sections (nothing to accept/reject).
+            if provenance in ("ai_generated", "ai_then_human"):
+                accept_col, reject_col, _ = st.columns([2, 2, 3])
+                with accept_col:
+                    if st.button(
+                        "✓ Accept",
+                        key=f"accept_{key}",
+                        help=f"Record that you approve the current {label} draft",
+                        use_container_width=True,
+                    ):
+                        project.version += 1
+                        append_event(
+                            project.timeline,
+                            event_type  = "section_accepted",
+                            actor       = "Human",
+                            description = f"Section accepted: {key}",
+                            metadata    = {"section_key": key},
+                        )
+                        try:
+                            save_project(project)
+                        except OSError as exc:
+                            st.error(f"**Could not save after accept.**\n\n{exc}")
+                        st.rerun()
+                with reject_col:
+                    if st.button(
+                        "✕ Reject",
+                        key=f"reject_{key}",
+                        help=f"Reject this draft and ask Gemini for a new {label}",
+                        use_container_width=True,
+                    ):
+                        project.version += 1
+                        append_event(
+                            project.timeline,
+                            event_type  = "section_rejected",
+                            actor       = "Human",
+                            description = f"Section rejected: {key}",
+                            metadata    = {"section_key": key},
+                        )
+                        # Rejection immediately triggers regeneration.
+                        success = _run_section_regeneration(project, key)
+                        if success:
+                            st.rerun()
+
     # Bottom margin spacer
     st.markdown("<div style='margin-bottom:0.65rem;'></div>",
                 unsafe_allow_html=True)
@@ -775,6 +825,162 @@ def _render_timeline(timeline: list) -> None:
         )
     tl += "</div>"
     st.markdown(tl, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Contribution Dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_contribution_dashboard(project) -> None:
+    """Render the Contribution Dashboard card and cache the result on first compute.
+
+    Called from render() inside the right column, below the Creative Timeline.
+    If the project has no sections yet, shows a placeholder instead.
+
+    Staleness: recomputes whenever project.contribution is empty or its
+    computed_at is older than the last timeline event's timestamp.
+    """
+    has_song = bool(project.song.get("sections"))
+
+    _label("◎ Contribution")
+
+    if not has_song:
+        st.markdown(
+            "<div style='background:#18181B;border:1px solid #2D2D31;"
+            "border-radius:9px;padding:1.1rem 1rem;text-align:center;"
+            "margin-bottom:1rem;'>"
+            "<div style='font-size:0.8rem;color:#A1A1AA;'>Generate a song first.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Staleness check ───────────────────────────────────────────────────────
+    # Compare against the last *creative* event — ignoring contribution_computed
+    # and passport_exported, which are derived/export events, not creative actions.
+    # Without this, a contribution_computed event would always make the cache look
+    # fresh and prevent any future recompute after a real action.
+    _DERIVED_EVENTS = {"contribution_computed", "passport_exported"}
+    creative_events = [
+        e for e in project.timeline
+        if e.get("event_type") not in _DERIVED_EVENTS
+    ]
+    cached      = project.contribution or {}
+    computed_at = cached.get("computed_at", "")
+    last_ts     = creative_events[-1]["timestamp"] if creative_events else ""
+    is_stale    = (not computed_at) or (last_ts and computed_at < last_ts)
+
+    if is_stale:
+        result = compute_contribution(project)
+        project.contribution = result
+        # Set contribution_pct on any AI collaborator entries.
+        for collab in project.collaborators:
+            if collab.get("role") == "ai_model":
+                collab["contribution_pct"] = result["ai_pct"]
+        project.version += 1
+        append_event(
+            project.timeline,
+            event_type  = "contribution_computed",
+            actor       = "AI",
+            description = "Contribution split computed",
+            metadata    = {
+                "human_pct":       result["human_pct"],
+                "ai_pct":          result["ai_pct"],
+                "direction_score": result["direction_score"],
+                "methodology_version": result["methodology_version"],
+            },
+        )
+        try:
+            save_project(project)
+        except OSError as exc:
+            st.warning(f"Could not cache contribution data: {exc}")
+        cached = result
+
+    human_pct       = cached.get("human_pct",       0.0)
+    ai_pct          = cached.get("ai_pct",           0.0)
+    direction_score = cached.get("direction_score",  0.0)
+
+    # ── Render ────────────────────────────────────────────────────────────────
+    # Two-segment authorship bar.
+    human_w = max(human_pct, 0)
+    ai_w    = max(ai_pct,    0)
+
+    bar_html = (
+        "<div style='display:flex;height:8px;border-radius:4px;overflow:hidden;"
+        "margin:0.5rem 0 0.85rem;'>"
+        f"<div style='flex:{human_w};background:#1DB954;'></div>"
+        f"<div style='flex:{ai_w};background:#8B5CF6;'></div>"
+        "</div>"
+    )
+
+    st.markdown(
+        f"<div style='background:#18181B;border:1px solid #2D2D31;"
+        f"border-left:3px solid #3B82F6;border-radius:9px;"
+        f"padding:0.9rem 1.05rem;margin-bottom:1rem;'>"
+        f"<div style='display:flex;justify-content:space-between;"
+        f"margin-bottom:0.15rem;'>"
+        f"<span style='font-size:0.78rem;color:#1DB954;font-weight:600;'>"
+        f"Human {human_pct}%</span>"
+        f"<span style='font-size:0.78rem;color:#8B5CF6;font-weight:600;'>"
+        f"AI {ai_pct}%</span>"
+        f"</div>"
+        f"{bar_html}"
+        f"<div style='font-size:0.75rem;color:#A1A1AA;margin-top:0.3rem;'>"
+        f"Direction score <span style='color:#FAFAFA;font-weight:600;'>"
+        f"{direction_score}%</span> &nbsp;·&nbsp; "
+        f"<span style='font-size:0.68rem;'>How much you steered the AI</span>"
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Export Passport button ────────────────────────────────────────────────
+    if st.button(
+        "🛂  Export Passport",
+        key="export_passport",
+        help="Download a Creative Passport PDF with the full timeline and contribution data",
+        use_container_width=True,
+        disabled=not has_song,
+    ):
+        try:
+            pdf_bytes = build_passport_pdf(project)
+        except Exception as exc:
+            st.error(f"**Passport generation failed.**\n\n{exc}")
+        else:
+            watermark = str(uuid4())
+            project.passport.update({
+                "exported_at":    datetime.now().isoformat(),
+                "export_format":  "pdf",
+                "watermark_id":   watermark,
+                # Never overwrite human-approved wording.
+                "transparency_statement": project.passport.get("transparency_statement", ""),
+                "authorship_line":        project.passport.get("authorship_line", ""),
+            })
+            project.version += 1
+            append_event(
+                project.timeline,
+                event_type  = "passport_exported",
+                actor       = "Human",
+                description = "Creative Passport exported as PDF",
+                metadata    = {
+                    "export_format": "pdf",
+                    "watermark_id":  watermark,
+                },
+            )
+            try:
+                save_project(project)
+            except OSError as exc:
+                st.warning(f"Passport built but could not save metadata: {exc}")
+
+            file_name = f"{project.name.replace(' ', '_')}_passport.pdf"
+            st.download_button(
+                label     = "⬇ Download Creative Passport",
+                data      = pdf_bytes,
+                file_name = file_name,
+                mime      = "application/pdf",
+                key       = "download_passport",
+                use_container_width=True,
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -867,6 +1073,9 @@ def render() -> None:
         # Creative Timeline
         _label("◷ Creative Timeline")
         _render_timeline(project.timeline)
+
+        # Contribution Dashboard
+        _render_contribution_dashboard(project)
 
     # ═══════════════════════════════════════
     # LEFT — Generation or Song Display

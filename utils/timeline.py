@@ -45,7 +45,8 @@ def create_event(
 
     Args:
         event_type:  Taxonomy key, e.g. "project_created", "ai_generated",
-                     "section_locked", "section_regenerated", "human_edit",
+                     "section_locked", "section_unlocked", "section_regenerated",
+                     "human_edit", "section_accepted", "section_rejected",
                      "contribution_computed", "passport_exported".
         actor:       "Human" or "AI".
         description: Human-readable summary of the event.
