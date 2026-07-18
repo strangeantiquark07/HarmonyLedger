@@ -547,23 +547,22 @@ def _render_song_header(song: dict) -> None:
 def _render_section_card(key: str, label: str, section: dict, project) -> None:
     """Render one interactive section card with lock toggle, Edit, and Regenerate.
 
-    The lyrics block is rendered as styled HTML in view mode.  When the user
-    clicks "✏️ Edit", the card switches to an inline edit mode that shows a
-    st.text_area pre-filled with the current lyrics and Save / Cancel buttons.
+    Header and lyrics are emitted as ONE continuous HTML card (same width,
+    joined corners), with every action button in a single row below it.  When
+    the user clicks "✏️ Edit", the card switches to an inline edit mode that
+    shows a st.text_area pre-filled with the lyrics and Save / Cancel buttons.
 
     Locked sections:
       - Amber left border + 🔒 badge
-      - No Edit or Regenerate button (cannot modify while locked)
-      - Lock button shows "🔓 Unlock"
+      - Action row is just "🔓 Unlock" (cannot modify while locked)
 
-    Unlocked sections (view mode):
-      - Default accent colour border
-      - "✏️ Edit" and "↻ Regenerate" action buttons below lyrics
-      - Lock button shows "🔒 Lock"
+    Unlocked sections (view mode) — one action row:
+      - AI-touched:    Edit / Regenerate / Accept / Reject / Lock
+      - human_written: Edit / Regenerate / Lock (nothing to accept/reject)
 
     Unlocked sections (edit mode):
       - st.text_area pre-filled with current lyrics
-      - "💾 Save Edit" and "✕ Cancel" buttons
+      - "💾 Save Edit" and "✕ Cancel" buttons (no lock while editing)
       - Saving calls _save_human_edit() then exits edit mode
 
     Session-state keys:
@@ -603,49 +602,31 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
         if is_locked else ""
     )
 
-    # ── Section header row: label + lock badge + provenance tag + lock btn ───
-    header_col, btn_col = st.columns([5, 1])
-
-    with header_col:
-        st.markdown(
-            f"<div style='background:#18181B;border:1px solid #2D2D31;"
-            f"border-left:3px solid {accent};border-radius:9px 9px 0 0;"
-            f"padding:0.75rem 1.1rem 0.5rem;margin-bottom:0;'>"
-            f"<div style='display:flex;justify-content:space-between;"
-            f"align-items:center;'>"
-            f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
-            f"letter-spacing:0.09em;color:{accent};'>"
-            f"{_html.escape(label)}{lock_badge}</span>"
-            f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
-            f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
-            f"{_html.escape(prov_label)}</span>"
-            f"</div></div>",
-            unsafe_allow_html=True,
-        )
-
-    with btn_col:
-        # Lock / Unlock toggle — always visible regardless of edit mode.
-        if is_locked:
-            if st.button("🔓", key=f"lock_{key}", help="Unlock this section",
-                         use_container_width=True):
-                # Cancel any pending edit when unlocking too.
-                st.session_state[edit_key] = False
-                if _toggle_lock(project, key, lock=False):
-                    st.rerun()
-        else:
-            if st.button("🔒", key=f"lock_{key}", help="Lock this section",
-                         use_container_width=True):
-                # Cancel any pending edit when locking.
-                st.session_state[edit_key] = False
-                if _toggle_lock(project, key, lock=True):
-                    st.rerun()
+    # ── Card header — full-width strip, rendered joined to the body below ────
+    # Header and body are emitted in ONE st.markdown call so they form a
+    # single continuous card: same width, no column gap between them.
+    header_html = (
+        f"<div style='background:#18181B;border:1px solid #2D2D31;"
+        f"border-left:3px solid {accent};border-radius:9px 9px 0 0;"
+        f"padding:0.75rem 1.1rem 0.5rem;'>"
+        f"<div style='display:flex;justify-content:space-between;"
+        f"align-items:center;'>"
+        f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.09em;color:{accent};'>"
+        f"{_html.escape(label)}{lock_badge}</span>"
+        f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
+        f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
+        f"{_html.escape(prov_label)}</span>"
+        f"</div></div>"
+    )
 
     # ── Body: edit mode or view mode ─────────────────────────────────────────
     if is_editing and not is_locked:
         # ── Edit mode: text_area + Save / Cancel ──────────────────────────────
         st.markdown(
+            header_html +
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
-            f"border-top:none;border-radius:0 0 0 0;"
+            f"border-top:none;"
             f"padding:0.6rem 1.1rem 0.3rem;margin-bottom:0;'>"
             f"<div style='font-size:0.72rem;color:#A1A1AA;margin-bottom:0.35rem;'>"
             f"Editing <strong style='color:#FAFAFA;'>{_html.escape(label)}</strong> "
@@ -675,9 +656,10 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                 st.rerun()
 
     else:
-        # ── View mode: styled HTML lyrics block ───────────────────────────────
+        # ── View mode: header + lyrics as one continuous card ─────────────────
         lyrics_html = _html.escape(lyrics).replace("\n", "<br>")
         st.markdown(
+            header_html +
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
             f"border-top:none;border-radius:0 0 9px 9px;"
             f"padding:0.6rem 1.1rem 0.9rem;margin-bottom:0.1rem;'>"
@@ -687,40 +669,49 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
             unsafe_allow_html=True,
         )
 
-        # ── Action buttons — only for unlocked sections ───────────────────────
-        if not is_locked:
-            edit_col, regen_col, _ = st.columns([2, 2, 3])
-            with edit_col:
+        # ── Action row: every control in one line ─────────────────────────────
+        # Locked      → just Unlock.
+        # human_written → Edit / Regenerate / Lock (nothing to accept/reject).
+        # AI-touched  → Edit / Regenerate / Accept / Reject / Lock.
+        if is_locked:
+            cols = st.columns(4)
+            with cols[0]:
+                if st.button("🔓 Unlock", key=f"lock_{key}",
+                             help="Unlock this section",
+                             use_container_width=True):
+                    st.session_state[edit_key] = False
+                    if _toggle_lock(project, key, lock=False):
+                        st.rerun()
+        else:
+            show_accept_reject = provenance in ("ai_generated", "ai_then_human")
+            cols = st.columns(5) if show_accept_reject else st.columns(3)
+
+            with cols[0]:
                 if st.button(
                     "✏️ Edit",
                     key=f"edit_{key}",
-                    help=f"Manually edit the {label} lyrics",
+                    help="Manually edit the lyrics",
                     use_container_width=True,
                 ):
                     st.session_state[edit_key] = True
                     st.rerun()
-            with regen_col:
+            with cols[1]:
                 if st.button(
                     "↻ Regenerate",
                     key=f"regen_{key}",
-                    help=f"Ask Gemini to rewrite the {label} only",
+                    help="Rewrite this section",
                     use_container_width=True,
                 ):
                     success = _run_section_regeneration(project, key)
                     if success:
                         st.rerun()
 
-            # ── Accept / Reject — only for AI-touched sections ────────────────
-            # Accept: records a human decision without changing lyrics/provenance.
-            # Reject: records the decision then immediately triggers regeneration.
-            # Not shown for human_written sections (nothing to accept/reject).
-            if provenance in ("ai_generated", "ai_then_human"):
-                accept_col, reject_col, _ = st.columns([2, 2, 3])
-                with accept_col:
+            if show_accept_reject:
+                with cols[2]:
                     if st.button(
                         "✓ Accept",
                         key=f"accept_{key}",
-                        help=f"Record that you approve the current {label} draft",
+                        help="Approve this draft",
                         use_container_width=True,
                     ):
                         project.version += 1
@@ -735,12 +726,13 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                             save_project(project)
                         except OSError as exc:
                             st.error(f"**Could not save after accept.**\n\n{exc}")
-                        st.rerun()
-                with reject_col:
+                        else:
+                            st.rerun()
+                with cols[3]:
                     if st.button(
                         "✕ Reject",
                         key=f"reject_{key}",
-                        help=f"Reject this draft and ask Gemini for a new {label}",
+                        help="Reject and regenerate",
                         use_container_width=True,
                     ):
                         project.version += 1
@@ -751,10 +743,24 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                             description = f"Section rejected: {key}",
                             metadata    = {"section_key": key},
                         )
+                        # Save the rejection first — the human's decision must
+                        # survive even if the regeneration call below fails.
+                        try:
+                            save_project(project)
+                        except OSError as exc:
+                            st.error(f"**Could not save rejection.**\n\n{exc}")
                         # Rejection immediately triggers regeneration.
                         success = _run_section_regeneration(project, key)
                         if success:
                             st.rerun()
+
+            with cols[4] if show_accept_reject else cols[2]:
+                if st.button("🔒 Lock", key=f"lock_{key}",
+                             help="Freeze this section",
+                             use_container_width=True):
+                    st.session_state[edit_key] = False
+                    if _toggle_lock(project, key, lock=True):
+                        st.rerun()
 
     # Bottom margin spacer
     st.markdown("<div style='margin-bottom:0.65rem;'></div>",
@@ -791,9 +797,11 @@ def _render_timeline(timeline: list) -> None:
         abs_ts      = _html.escape(timestamp)
 
         if actor == "Human":
-            dot_col, actor_c, actor_bg, actor_br = "#1DB954", "#1DB954", "#1DB95418", "#1DB95440"
+            # Electric lime — human creative decisions.
+            dot_col, actor_c, actor_bg, actor_br = "#A3E635", "#A3E635", "#A3E63518", "#A3E63540"
         elif actor == "AI":
-            dot_col, actor_c, actor_bg, actor_br = "#8B5CF6", "#A78BFA", "#8B5CF618", "#8B5CF640"
+            # Electric cyan — AI-generated actions.
+            dot_col, actor_c, actor_bg, actor_br = "#22D3EE", "#22D3EE", "#22D3EE18", "#22D3EE40"
         else:
             dot_col, actor_c, actor_bg, actor_br = "#52525B", "#71717A", "#52525B18", "#52525B40"
 
@@ -802,7 +810,7 @@ def _render_timeline(timeline: list) -> None:
             f"<div style='position:absolute;left:-1.22rem;top:0.85rem;"
             f"width:11px;height:11px;border-radius:50%;"
             f"background:{dot_col};border:2px solid #0F0F11;"
-            f"box-shadow:0 0 0 2px {dot_col}30;'></div>"
+            f"box-shadow:0 0 8px {dot_col}99,0 0 0 2px {dot_col}30;'></div>"
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
             f"border-radius:9px;padding:0.8rem 1rem;'>"
             f"<div style='display:flex;justify-content:space-between;"
