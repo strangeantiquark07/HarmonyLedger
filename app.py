@@ -149,7 +149,8 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
     border: 1px solid #3A3A3F !important;
     background: #222226 !important;
     color: #C4C4C8 !important;
-    padding: 0.4rem 0.9rem !important;
+    padding: 0.4rem 0.5rem !important;
+    white-space: nowrap !important;   /* never wrap a label to two lines */
 }
 [data-testid="stButton"] > button:hover {
     background: #2E2E34 !important;
