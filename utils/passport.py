@@ -1,0 +1,586 @@
+"""
+utils/passport.py
+─────────────────
+Phase 4 — Creative Ownership Intelligence.
+
+Builds a Creative Passport PDF entirely in memory using ReportLab and
+returns the raw bytes.  No file is written to disk inside this function.
+
+Design note: this is a printed/exported document, not a screen inside the
+Streamlit app — it renders on a plain white page in any PDF viewer or on
+paper. It deliberately does NOT reuse the app's dark-mode colours (light
+gray text on near-black cards); on a white page that combination is close
+to unreadable. Instead this uses a light "certificate" palette: a navy
+header band, strong accent colours for real content (never pastel-on-white
+for anything that must stay legible), and vector-drawn shapes instead of
+emoji glyphs, since the base-14 PDF fonts used here don't have emoji glyphs
+and silently render them as an invisible/blank box.
+
+The caller (views/view_project.py) is responsible for:
+  - Offering the bytes via st.download_button
+  - Stamping project.passport with exported_at / watermark_id
+  - Logging the passport_exported timeline event
+  - Calling save_project()
+
+build_passport_pdf() is pure: no side effects, no Streamlit imports.
+"""
+
+import io
+from datetime import datetime
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.lib.enums import TA_CENTER
+from reportlab.pdfgen import canvas as canvas_mod
+from reportlab.platypus import (
+    BaseDocTemplate,
+    PageTemplate,
+    Frame,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    HRFlowable,
+    KeepTogether,
+)
+from reportlab.graphics.shapes import Drawing, Circle, Wedge, Line, String, Rect
+
+
+# ── Palette — a light "certificate" theme, tuned for a white printed page ────
+_NAVY       = colors.HexColor("#16233A")   # header band / primary dark ink
+_NAVY_SOFT  = colors.HexColor("#1F2F4D")   # secondary dark panels
+_INK        = colors.HexColor("#111827")   # body text on white
+_SUBTLE     = colors.HexColor("#6B7280")   # secondary text on white (legible!)
+_BORDER     = colors.HexColor("#E2E5EA")   # table grid / hairlines
+_ROW_ALT    = colors.HexColor("#F6F7F9")   # zebra row tint
+_WHITE      = colors.HexColor("#FFFFFF")
+_GREEN      = colors.HexColor("#12A454")   # human authorship
+_PURPLE     = colors.HexColor("#7C4DFF")   # AI authorship
+_GOLD       = colors.HexColor("#B8862B")   # seal / accent rule
+
+# Section accent colours — match the app's own section colour-coding exactly.
+_SECTION_COLORS = {
+    "verse_1": colors.HexColor("#12A454"),
+    "chorus":  colors.HexColor("#2F6FE4"),
+    "verse_2": colors.HexColor("#12A454"),
+    "bridge":  colors.HexColor("#C8790E"),
+    "outro":   colors.HexColor("#7C4DFF"),
+}
+_SECTION_ORDER  = ("verse_1", "chorus", "verse_2", "bridge", "outro")
+_SECTION_LABELS = {
+    "verse_1": "Verse 1", "chorus": "Chorus", "verse_2": "Verse 2",
+    "bridge": "Bridge",   "outro":  "Outro",
+}
+_PROV_LABELS = {
+    "ai_generated":  "AI Generated",
+    "human_written": "Human Written",
+    "ai_then_human": "AI + Human Edit",
+}
+
+# Event types that are bookkeeping/derived, not creative decisions — these
+# recompute after nearly every action and would otherwise spam the printed
+# timeline with near-duplicate rows. They stay in the underlying JSON for a
+# full audit trail; the human-facing document just doesn't repeat them.
+_TIMELINE_NOISE_EVENTS = {"contribution_computed"}
+
+_ACTOR_COLORS = {"Human": _GREEN, "AI": _PURPLE}
+
+# Default transparency statement used when no human-approved text exists yet.
+# Drafted by IBM Bob (Ask/Agent mode) per SPEC.md Phase 4, which assigns
+# "draft and refine the AI Transparency Statement" explicitly to Bob.
+# The creator may replace this with their own approved wording in the app;
+# that wording is stored in project.passport["transparency_statement"] and
+# will be used verbatim in place of this text on every subsequent export.
+_DEFAULT_TRANSPARENCY = (
+    "This Creative Passport is produced by HarmonyLedger and documents the "
+    "collaborative process between a human creator and a generative AI "
+    "model (Google Gemini). It is intended to support transparency in "
+    "AI-assisted creative work and may be attached to a song submission, "
+    "sync-licensing application, or rights-body registration.\n\n"
+
+    "Contribution figures are computed deterministically from an "
+    "append-only event log that records every action taken during the "
+    "project — by the human creator and by the AI — in the order they "
+    "occurred. No contribution figure is hand-entered or estimated after "
+    "the fact; each number is a direct arithmetic result of the logged "
+    "record. Methodology v{version} is in use for this export.\n\n"
+
+    "Section authorship is derived from the provenance state each song "
+    "section carries at the time of export. A section marked "
+    "human_written is attributed 100% to the human creator. A section "
+    "marked ai_generated — meaning the AI produced it and the creator "
+    "accepted it without textual change — is attributed 100% to the AI. "
+    "A section marked ai_then_human — meaning the AI produced a draft "
+    "that the creator then edited — is attributed 50% to each party. "
+    "The headline human/AI percentage shown on this passport is the "
+    "average of those per-section attributions across all sections "
+    "present in the song.\n\n"
+
+    "The Direction Score measures creative steering: every deliberate "
+    "human decision logged in the timeline (locking a section, "
+    "requesting a regeneration, accepting or rejecting an AI draft, "
+    "making a direct edit) is counted as a human-direction event. The "
+    "Direction Score is the ratio of those events to all timeline events, "
+    "expressed as a percentage. A higher Direction Score indicates that "
+    "the creator exercised more active editorial control over the AI's "
+    "output — an important signal for rights bodies evaluating the extent "
+    "of human authorship.\n\n"
+
+    "The full event log, including events omitted from the printed "
+    "timeline for readability, is retained in the project's source data "
+    "file and is available for independent audit on request."
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Small helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_ts(raw: str, fallback: str = "—") -> str:
+    """Format an ISO-8601 timestamp as a short human-readable string.
+
+    Falls back to the raw string (or *fallback*) if it can't be parsed —
+    this must never raise, since malformed/missing timestamps shouldn't
+    break PDF generation.
+    """
+    if not raw:
+        return fallback
+    try:
+        dt = datetime.fromisoformat(str(raw))
+        return dt.strftime("%b %d, %Y · %I:%M %p").replace(" 0", " ")
+    except (ValueError, TypeError):
+        return str(raw)[:19] or fallback
+
+
+def _seal_drawing(size_mm: float = 15) -> Drawing:
+    """A small vector-drawn circular seal with a checkmark.
+
+    Deliberately drawn as shapes, not a Unicode glyph — base-14 PDF fonts
+    have no checkmark/emoji glyph and silently render one as a blank box.
+    """
+    s = size_mm * mm
+    d = Drawing(s, s)
+    cx = cy = s / 2
+    r = s / 2 - 1
+    d.add(Circle(cx, cy, r, fillColor=None, strokeColor=_GOLD, strokeWidth=1.4))
+    d.add(Circle(cx, cy, r - 3, fillColor=None, strokeColor=_GOLD, strokeWidth=0.6))
+    # Checkmark, drawn as two line segments.
+    d.add(Line(cx - r * 0.42, cy - r * 0.02, cx - r * 0.10, cy - r * 0.34,
+               strokeColor=_GOLD, strokeWidth=1.8, strokeLineCap=1))
+    d.add(Line(cx - r * 0.10, cy - r * 0.34, cx + r * 0.46, cy + r * 0.36,
+               strokeColor=_GOLD, strokeWidth=1.8, strokeLineCap=1))
+    return d
+
+
+def _contribution_donut(human_pct: float, ai_pct: float, size_mm: float = 40) -> Drawing:
+    """A donut chart showing the human/AI authorship split.
+
+    Drawn as a full AI-coloured disc with a human-coloured wedge on top
+    (rather than two abutting wedges) so a 0% or 100% split never leaves a
+    seam-math edge case — the "background" colour always covers the full
+    circle first.
+    """
+    s = size_mm * mm
+    d = Drawing(s, s)
+    cx = cy = s / 2
+    r = s / 2 - 1
+
+    # Full AI-coloured base disc.
+    d.add(Wedge(cx, cy, r, 0, 360, fillColor=_PURPLE, strokeColor=None))
+    # Human wedge on top, starting at 12 o'clock, sweeping clockwise.
+    human_deg = max(0.0, min(360.0, (human_pct / 100.0) * 360.0))
+    if human_deg > 0:
+        d.add(Wedge(cx, cy, r, 90 - human_deg, 90, fillColor=_GREEN, strokeColor=None))
+    # Punch the donut hole.
+    d.add(Circle(cx, cy, r * 0.56, fillColor=_WHITE, strokeColor=None))
+
+    # On a tie the human wedge is drawn on top and is visually dominant,
+    # so always prefer the human percentage when the split is exactly equal.
+    label = f"{human_pct:g}%" if human_pct >= ai_pct else f"{ai_pct:g}%"
+    d.add(String(cx, cy - 3, label, fontName="Helvetica-Bold", fontSize=11,
+                 fillColor=_INK, textAnchor="middle"))
+    return d
+
+
+def _score_bar(pct: float, width_mm: float = 70, height_mm: float = 3.2) -> Drawing:
+    """A horizontal proportional-fill bar (used for the direction score)."""
+    w, h = width_mm * mm, height_mm * mm
+    d = Drawing(w, h)
+    d.add(Rect(0, 0, w, h, fillColor=_BORDER, strokeColor=None))
+    fill_w = max(0.0, min(1.0, pct / 100.0)) * w
+    if fill_w > 0:
+        d.add(Rect(0, 0, fill_w, h, fillColor=_NAVY, strokeColor=None))
+    return d
+
+
+class _NumberedCanvas(canvas_mod.Canvas):
+    """Canvas that stamps 'Page N of Total' + a footer rule on every page.
+
+    Standard two-pass ReportLab pattern: page draws are buffered until the
+    total page count is known, then each buffered page gets the footer
+    drawn before it's actually written out.
+    """
+
+    def __init__(self, *args, **kwargs):
+        canvas_mod.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_footer(total)
+            canvas_mod.Canvas.showPage(self)
+        canvas_mod.Canvas.save(self)
+
+    def _draw_footer(self, total_pages: int) -> None:
+        w, _ = A4
+        self.setStrokeColor(_BORDER)
+        self.setLineWidth(0.6)
+        self.line(20 * mm, 14 * mm, w - 20 * mm, 14 * mm)
+        self.setFont("Helvetica", 7.5)
+        self.setFillColor(_SUBTLE)
+        self.drawString(20 * mm, 9 * mm, "HarmonyLedger · Creative Passport")
+        self.drawRightString(
+            w - 20 * mm, 9 * mm, f"Page {self._pageNumber} of {total_pages}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_passport_pdf(project) -> bytes:
+    """Build a Creative Passport PDF for *project* and return raw bytes.
+
+    Args:
+        project: A Project instance (utils.models.Project).
+
+    Returns:
+        bytes — the PDF content starting with b'%PDF'.
+
+    Does not mutate *project* or call save_project().
+    """
+    buf = io.BytesIO()
+    frame = Frame(
+        20 * mm, 18 * mm, A4[0] - 40 * mm, A4[1] - 18 * mm - 14 * mm,
+        id="main", topPadding=0, bottomPadding=0, leftPadding=0, rightPadding=0,
+    )
+    doc = BaseDocTemplate(
+        buf,
+        pagesize=A4,
+        title=f"Creative Passport — {project.name}",
+    )
+    doc.addPageTemplates([PageTemplate(id="passport", frames=[frame])])
+
+    styles = getSampleStyleSheet()
+    story  = []
+
+    h2 = ParagraphStyle(
+        "h2", parent=styles["Heading2"],
+        fontSize=12.5, textColor=_NAVY, spaceBefore=12, spaceAfter=5,
+        fontName="Helvetica-Bold",
+    )
+    body = ParagraphStyle(
+        "body", parent=styles["Normal"],
+        fontSize=9.3, textColor=_INK, leading=15,
+    )
+    muted = ParagraphStyle(
+        "muted", parent=styles["Normal"],
+        fontSize=8, textColor=_SUBTLE, leading=12,
+    )
+    stat_label = ParagraphStyle(
+        "stat_label", parent=styles["Normal"],
+        fontSize=8, textColor=_SUBTLE, leading=11,
+    )
+    stat_value = ParagraphStyle(
+        "stat_value", parent=styles["Normal"],
+        fontSize=10, textColor=_INK, leading=13, fontName="Helvetica-Bold",
+    )
+
+    # ── Header band ───────────────────────────────────────────────────────────
+    song           = project.song or {}
+    ai_title       = song.get("title", "")          # creative title from Gemini
+    project_title  = project.name                    # user's own project name
+    genre    = song.get("genre", "")
+    mood     = song.get("mood", "")
+    tempo    = song.get("tempo", "")
+    key      = song.get("key", "")
+    time_sig = song.get("time_signature", "")
+
+    # "HARMONYLEDGER · CREATIVE PASSPORT" — small kicker label, upper-right.
+    # (Tried inserting spaces between letters for a tracked-out look, but
+    # reportlab counts those spaces toward line width without rendering
+    # visible gaps at this size, so the label silently overflowed again —
+    # reverted. Plain text, sized with real headroom via stringWidth().)
+    watermark_style = ParagraphStyle(
+        "watermark", parent=styles["Normal"], fontSize=7,
+        textColor=colors.HexColor("#8DA0BA"),
+        fontName="Helvetica", leading=10, alignment=2,  # TA_RIGHT
+    )
+    title_style = ParagraphStyle(
+        "title", parent=styles["Normal"], fontSize=21, textColor=_WHITE,
+        fontName="Helvetica-Bold", leading=24, spaceBefore=0,
+    )
+    subtitle_style = ParagraphStyle(
+        "subtitle", parent=styles["Normal"], fontSize=9.5,
+        textColor=colors.HexColor("#C8D4E3"),
+        fontName="Helvetica-Oblique", leading=13, spaceBefore=5,
+    )
+    band_meta_style = ParagraphStyle(
+        "band_meta", parent=styles["Normal"], fontSize=8.5,
+        textColor=colors.HexColor("#8FA4BA"),
+        leading=12, spaceBefore=8,
+    )
+
+    meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
+
+    band_text_cell = [Paragraph(project_title, title_style)]
+    if ai_title and ai_title != project_title:
+        band_text_cell.append(Paragraph(f"“{ai_title}”", subtitle_style))
+    if meta_parts:
+        # A hairline rule separates the title block from the metadata line,
+        # instead of both running together with only a font-size change.
+        band_text_cell.append(HRFlowable(
+            width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
+            spaceBefore=7, spaceAfter=7, hAlign="LEFT",
+        ))
+        band_text_cell.append(Paragraph("  ·  ".join(meta_parts), band_meta_style))
+
+    watermark_cell = [Paragraph("HARMONYLEDGER  ·  CREATIVE PASSPORT", watermark_style)]
+
+    band = Table(
+        [[band_text_cell, watermark_cell]],
+        colWidths=[A4[0] - 40 * mm - 66 * mm, 66 * mm],
+    )
+    band.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), _NAVY),
+        ("VALIGN",       (0, 0), (0, 0), "MIDDLE"),
+        ("VALIGN",       (1, 0), (1, 0), "MIDDLE"),
+        ("ALIGN",        (1, 0), (1, 0), "RIGHT"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 16),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 16),
+        ("LEFTPADDING",  (0, 0), (0, 0), 14),
+        ("RIGHTPADDING", (1, 0), (1, 0), 12),
+    ]))
+    story.append(band)
+    story.append(Spacer(1, 6 * mm))
+
+    # ── Contribution Split ────────────────────────────────────────────────────
+    contrib      = project.contribution or {}
+    human_pct    = contrib.get("human_pct", 0.0)
+    ai_pct       = contrib.get("ai_pct", 0.0)
+    dir_score    = contrib.get("direction_score", 0.0)
+    meth_version = contrib.get("methodology_version", 1)
+    computed_at  = _fmt_ts(contrib.get("computed_at", ""), fallback="Not yet computed")
+
+    story.append(Paragraph("Contribution Split", h2))
+
+    stat_block = Table(
+        [
+            [Paragraph("HUMAN AUTHORSHIP", stat_label)],
+            [Paragraph(f"{human_pct:g}%", ParagraphStyle(
+                "hv", parent=stat_value, textColor=_GREEN, fontSize=15))],
+            [Spacer(1, 2 * mm)],
+            [Paragraph("AI AUTHORSHIP", stat_label)],
+            [Paragraph(f"{ai_pct:g}%", ParagraphStyle(
+                "av", parent=stat_value, textColor=_PURPLE, fontSize=15))],
+            [Spacer(1, 2 * mm)],
+            [Paragraph("DIRECTION SCORE — how much you steered the AI", stat_label)],
+            [_score_bar(dir_score)],
+            [Paragraph(f"{dir_score:g}%", stat_value)],
+        ],
+        colWidths=[70 * mm],
+    )
+    stat_block.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+
+    donut_cell = Table(
+        [[_contribution_donut(human_pct, ai_pct)]],
+        colWidths=[45 * mm],
+    )
+    donut_cell.setStyle(TableStyle([("ALIGN", (0, 0), (0, 0), "CENTER")]))
+
+    contrib_row = Table(
+        [[donut_cell, stat_block]],
+        colWidths=[45 * mm, A4[0] - 40 * mm - 45 * mm],
+    )
+    contrib_row.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(contrib_row)
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph(
+        f"Methodology v{meth_version} · last computed {computed_at}", muted,
+    ))
+    story.append(Spacer(1, 5 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=_BORDER))
+    story.append(Spacer(1, 4 * mm))
+
+    # ── Section Authorship ────────────────────────────────────────────────────
+    sections = song.get("sections", {})
+    if sections:
+        story.append(Paragraph("Section Authorship", h2))
+        sec_data = [["", "Section", "Provenance", "Last Edited By"]]
+        swatches = []
+        for sec_key in _SECTION_ORDER:
+            if sec_key not in sections:
+                continue
+            sec  = sections[sec_key]
+            prov = _PROV_LABELS.get(sec.get("provenance", ""), sec.get("provenance", "—"))
+            by   = sec.get("last_edited_by", "—")
+            sec_data.append(["", _SECTION_LABELS.get(sec_key, sec_key), prov, by])
+            swatches.append(_SECTION_COLORS.get(sec_key, _SUBTLE))
+
+        # Widths sum to 170mm — the full frame width — so the table's right
+        # edge aligns with the header band and the other tables.
+        col_widths = [4 * mm, 45 * mm, 75 * mm, 46 * mm]
+        sec_table = Table(sec_data, colWidths=col_widths, repeatRows=1)
+        style_cmds = [
+            ("BACKGROUND",   (0, 0), (-1, 0), _NAVY),
+            ("TEXTCOLOR",    (0, 0), (-1, 0), _WHITE),
+            ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",     (0, 0), (-1, -1), 9),
+            ("TEXTCOLOR",    (1, 1), (-1, -1), _INK),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_WHITE, _ROW_ALT]),
+            ("GRID",         (0, 0), (-1, -1), 0.5, _BORDER),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ]
+        for i, swatch_color in enumerate(swatches, start=1):
+            style_cmds.append(("BACKGROUND", (0, i), (0, i), swatch_color))
+        sec_table.setStyle(TableStyle(style_cmds))
+        story.append(sec_table)
+        story.append(Spacer(1, 5 * mm))
+
+    # ── Creative Timeline ─────────────────────────────────────────────────────
+    story.append(Paragraph("Creative Timeline", h2))
+    timeline = project.timeline or []
+    visible_events = [e for e in timeline if e.get("event_type") not in _TIMELINE_NOISE_EVENTS]
+    omitted = len(timeline) - len(visible_events)
+
+    if visible_events:
+        # Rows are renumbered 1..N for print — the raw seq numbers have gaps
+        # where filtered bookkeeping events sat, which reads as an error.
+        tl_data = [["#", "Event", "Actor", "Description", "When"]]
+        for row_no, event in enumerate(visible_events, start=1):
+            tl_data.append([
+                str(row_no),
+                str(event.get("event_type", "")).replace("_", " "),
+                str(event.get("actor", "")),
+                (lambda d: d[:57] + "…" if len(d) > 58 else d)(str(event.get("description", ""))),
+                _fmt_ts(event.get("timestamp", "")),
+            ])
+        # Sums to 170mm (full frame width); "When" gets 36mm so a full
+        # "Jul 18, 2026 · 9:00 PM" timestamp fits without clipping.
+        col_widths = [8 * mm, 34 * mm, 16 * mm, 76 * mm, 36 * mm]
+        tl_table = Table(tl_data, colWidths=col_widths, repeatRows=1)
+        style_cmds = [
+            ("BACKGROUND",   (0, 0), (-1, 0), _NAVY),
+            ("TEXTCOLOR",    (0, 0), (-1, 0), _WHITE),
+            ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",     (0, 0), (-1, 0), 8.5),
+            ("TEXTCOLOR",    (0, 1), (-1, -1), _INK),
+            ("FONTSIZE",     (0, 1), (-1, -1), 8),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_WHITE, _ROW_ALT]),
+            ("GRID",         (0, 0), (-1, -1), 0.5, _BORDER),
+            ("TOPPADDING",   (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 5),
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ]
+        for i, event in enumerate(visible_events, start=1):
+            actor_color = _ACTOR_COLORS.get(event.get("actor"), _SUBTLE)
+            style_cmds.append(("TEXTCOLOR", (2, i), (2, i), actor_color))
+            style_cmds.append(("FONTNAME",  (2, i), (2, i), "Helvetica-Bold"))
+        tl_table.setStyle(TableStyle(style_cmds))
+        story.append(tl_table)
+        if omitted:
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph(
+                f"({omitted} automatic contribution-recalculation event"
+                f"{'s' if omitted != 1 else ''} omitted above for readability "
+                f"— retained in full in the project's data file.)",
+                muted,
+            ))
+    else:
+        story.append(Paragraph("No timeline events recorded.", muted))
+
+    story.append(Spacer(1, 6 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=_BORDER))
+    story.append(Spacer(1, 4 * mm))
+
+    # ── Transparency Statement ────────────────────────────────────────────────
+    passport         = project.passport or {}
+    custom_statement = passport.get("transparency_statement", "").strip()
+    authorship_line  = passport.get("authorship_line", "").strip()
+    statement_text   = custom_statement or _DEFAULT_TRANSPARENCY.format(version=meth_version)
+
+    quote_style = ParagraphStyle(
+        "quote", parent=body, textColor=_INK, leftIndent=10, leading=15,
+    )
+    quote_cell = Table([[Paragraph("Transparency Statement", h2)],
+                        [Paragraph(statement_text, quote_style)]],
+                       colWidths=[A4[0] - 40 * mm - 8])
+    quote_cell.setStyle(TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING",   (0, 0), (0, 0), 4),
+        ("BOTTOMPADDING",(0, -1), (0, -1), 8),
+        ("LINEBEFORE",   (0, 0), (0, -1), 2.4, _GOLD),
+    ]))
+    # KeepTogether on the full quote block would push a long custom statement
+    # onto a new page, leaving a blank gap. Append it as a plain flowable so
+    # ReportLab can paginate within it if necessary.
+    story.append(quote_cell)
+
+    if authorship_line:
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(authorship_line, ParagraphStyle(
+            "auth", parent=styles["Normal"],
+            fontSize=10, textColor=_NAVY, leading=13, fontName="Helvetica-Bold",
+        )))
+
+    # ── Provenance stamp ──────────────────────────────────────────────────────
+    story.append(Spacer(1, 6 * mm))
+    watermark_id = passport.get("watermark_id") or "unassigned until export"
+    # Use the timestamp already stamped by the caller (view_project.py) so the
+    # value printed on the page matches the one saved to the project file and
+    # the timeline event — not a second datetime.now() call made milliseconds later.
+    exported_at  = _fmt_ts(passport.get("exported_at") or datetime.now().isoformat())
+    stamp = Table(
+        [[Paragraph(
+            f"<b>Project ID</b>  {project.project_id}<br/>"
+            f"<b>Watermark</b>  {watermark_id}<br/>"
+            f"<b>Exported</b>  {exported_at}  ·  Project revision {project.version}",
+            ParagraphStyle("stamp", parent=muted, leading=12, fontSize=7.5,
+                            textColor=_SUBTLE),
+        )]],
+        colWidths=[A4[0] - 40 * mm],
+    )
+    stamp.setStyle(TableStyle([
+        ("BOX",          (0, 0), (-1, -1), 0.6, _BORDER),
+        ("BACKGROUND",   (0, 0), (-1, -1), _ROW_ALT),
+        ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(stamp)
+
+    doc.build(story, canvasmaker=_NumberedCanvas)
+    return buf.getvalue()

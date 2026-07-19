@@ -40,7 +40,12 @@ from utils.ai_engine import (
     SongGenerationError,
     DriftError,
 )
-from utils.storage import load_project, save_project, ProjectNotFoundError, ProjectCorruptedError
+from utils.contribution import compute_contribution
+from utils.passport import build_passport_pdf
+from utils.storage import (
+    load_project, save_project, ProjectNotFoundError, ProjectCorruptedError,
+    ProjectConflictError,
+)
 from utils.timeline import append_event
 
 
@@ -133,6 +138,8 @@ def _event_icon(event_type: str) -> str:
         "section_unlocked":      "🔓",
         "section_regenerated":   "🔄",
         "human_edit":            "✍️",
+        "section_accepted":      "✓",
+        "section_rejected":      "✕",
         "contribution_computed": "📊",
         "passport_exported":     "🛂",
     }
@@ -182,7 +189,7 @@ def _run_generation(project) -> bool:
     project.song = {**song_dict, "genre": genre}
 
     # ── Add Gemini model as a collaborator (idempotent) ───────────────────────
-    model_id = song_dict.get("model_used", "gemini-2.5-flash")
+    model_id = song_dict.get("model_used", "gemini-flash-latest")
     already_listed = any(
         c.get("model_id") == model_id
         for c in project.collaborators
@@ -216,8 +223,8 @@ def _run_generation(project) -> bool:
 
     # ── Save atomically ───────────────────────────────────────────────────────
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Song generated but could not be saved.**\n\n**Detail:** {exc}")
         return False
 
@@ -272,8 +279,8 @@ def _toggle_lock(project, section_key: str, lock: bool) -> bool:
     )
 
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Could not save lock state.**\n\n**Detail:** {exc}")
         return False
 
@@ -350,8 +357,8 @@ def _save_human_edit(project, section_key: str, new_lyrics: str) -> bool:
     )
 
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(f"**Edit saved in memory but could not be written to disk.**\n\n**Detail:** {exc}")
         return False
 
@@ -442,7 +449,7 @@ def _run_section_regeneration(project, section_key: str) -> bool:
         return False
 
     # ── Step 5: log timeline event ────────────────────────────────────────────
-    model_id = project.song.get("model_used", "gemini-2.5-flash")
+    model_id = project.song.get("model_used", "gemini-flash-latest")
     project.version += 1
     append_event(
         project.timeline,
@@ -458,8 +465,8 @@ def _run_section_regeneration(project, section_key: str) -> bool:
 
     # ── Step 6: save atomically ───────────────────────────────────────────────
     try:
-        save_project(project)
-    except OSError as exc:
+        save_project(project, check_conflict=True)
+    except (OSError, ProjectConflictError) as exc:
         st.error(
             f"**Section regenerated but could not be saved.**\n\n**Detail:** {exc}"
         )
@@ -543,23 +550,22 @@ def _render_song_header(song: dict) -> None:
 def _render_section_card(key: str, label: str, section: dict, project) -> None:
     """Render one interactive section card with lock toggle, Edit, and Regenerate.
 
-    The lyrics block is rendered as styled HTML in view mode.  When the user
-    clicks "✏️ Edit", the card switches to an inline edit mode that shows a
-    st.text_area pre-filled with the current lyrics and Save / Cancel buttons.
+    Header and lyrics are emitted as ONE continuous HTML card (same width,
+    joined corners), with every action button in a single row below it.  When
+    the user clicks "✏️", the card switches to an inline edit mode that
+    shows a st.text_area pre-filled with the lyrics and Save / Cancel buttons.
 
     Locked sections:
       - Amber left border + 🔒 badge
-      - No Edit or Regenerate button (cannot modify while locked)
-      - Lock button shows "🔓 Unlock"
+      - Action row is just "🔓 Unlock" (cannot modify while locked)
 
-    Unlocked sections (view mode):
-      - Default accent colour border
-      - "✏️ Edit" and "↻ Regenerate" action buttons below lyrics
-      - Lock button shows "🔒 Lock"
+    Unlocked sections (view mode) — one action row:
+      - AI-touched:    Edit / Regenerate / Accept / Reject / Lock
+      - human_written: Edit / Regenerate / Lock (nothing to accept/reject)
 
     Unlocked sections (edit mode):
       - st.text_area pre-filled with current lyrics
-      - "💾 Save Edit" and "✕ Cancel" buttons
+      - "💾 Save Edit" and "✕ Cancel" buttons (no lock while editing)
       - Saving calls _save_human_edit() then exits edit mode
 
     Session-state keys:
@@ -599,49 +605,31 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
         if is_locked else ""
     )
 
-    # ── Section header row: label + lock badge + provenance tag + lock btn ───
-    header_col, btn_col = st.columns([5, 1])
-
-    with header_col:
-        st.markdown(
-            f"<div style='background:#18181B;border:1px solid #2D2D31;"
-            f"border-left:3px solid {accent};border-radius:9px 9px 0 0;"
-            f"padding:0.75rem 1.1rem 0.5rem;margin-bottom:0;'>"
-            f"<div style='display:flex;justify-content:space-between;"
-            f"align-items:center;'>"
-            f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
-            f"letter-spacing:0.09em;color:{accent};'>"
-            f"{_html.escape(label)}{lock_badge}</span>"
-            f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
-            f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
-            f"{_html.escape(prov_label)}</span>"
-            f"</div></div>",
-            unsafe_allow_html=True,
-        )
-
-    with btn_col:
-        # Lock / Unlock toggle — always visible regardless of edit mode.
-        if is_locked:
-            if st.button("🔓", key=f"lock_{key}", help="Unlock this section",
-                         use_container_width=True):
-                # Cancel any pending edit when unlocking too.
-                st.session_state[edit_key] = False
-                if _toggle_lock(project, key, lock=False):
-                    st.rerun()
-        else:
-            if st.button("🔒", key=f"lock_{key}", help="Lock this section",
-                         use_container_width=True):
-                # Cancel any pending edit when locking.
-                st.session_state[edit_key] = False
-                if _toggle_lock(project, key, lock=True):
-                    st.rerun()
+    # ── Card header — full-width strip, rendered joined to the body below ────
+    # Header and body are emitted in ONE st.markdown call so they form a
+    # single continuous card: same width, no column gap between them.
+    header_html = (
+        f"<div style='background:#18181B;border:1px solid #2D2D31;"
+        f"border-left:3px solid {accent};border-radius:9px 9px 0 0;"
+        f"padding:0.75rem 1.1rem 0.5rem;'>"
+        f"<div style='display:flex;justify-content:space-between;"
+        f"align-items:center;'>"
+        f"<span style='font-size:0.72rem;font-weight:700;text-transform:uppercase;"
+        f"letter-spacing:0.09em;color:{accent};'>"
+        f"{_html.escape(label)}{lock_badge}</span>"
+        f"<span style='font-size:0.65rem;font-weight:600;color:#A1A1AA;"
+        f"background:#2D2D3160;border-radius:999px;padding:0.1rem 0.5rem;'>"
+        f"{_html.escape(prov_label)}</span>"
+        f"</div></div>"
+    )
 
     # ── Body: edit mode or view mode ─────────────────────────────────────────
     if is_editing and not is_locked:
         # ── Edit mode: text_area + Save / Cancel ──────────────────────────────
         st.markdown(
+            header_html +
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
-            f"border-top:none;border-radius:0 0 0 0;"
+            f"border-top:none;"
             f"padding:0.6rem 1.1rem 0.3rem;margin-bottom:0;'>"
             f"<div style='font-size:0.72rem;color:#A1A1AA;margin-bottom:0.35rem;'>"
             f"Editing <strong style='color:#FAFAFA;'>{_html.escape(label)}</strong> "
@@ -671,9 +659,10 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
                 st.rerun()
 
     else:
-        # ── View mode: styled HTML lyrics block ───────────────────────────────
+        # ── View mode: header + lyrics as one continuous card ─────────────────
         lyrics_html = _html.escape(lyrics).replace("\n", "<br>")
         st.markdown(
+            header_html +
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
             f"border-top:none;border-radius:0 0 9px 9px;"
             f"padding:0.6rem 1.1rem 0.9rem;margin-bottom:0.1rem;'>"
@@ -683,27 +672,110 @@ def _render_section_card(key: str, label: str, section: dict, project) -> None:
             unsafe_allow_html=True,
         )
 
-        # ── Action buttons — only for unlocked sections ───────────────────────
-        if not is_locked:
-            edit_col, regen_col, _ = st.columns([2, 2, 3])
-            with edit_col:
+        # ── Action row: every control in one line ─────────────────────────────
+        # Locked      → just Unlock.
+        # human_written → Edit / Regenerate / Lock (nothing to accept/reject).
+        # AI-touched  → Edit / Regenerate / Accept / Reject / Lock.
+        if is_locked:
+            cols = st.columns(4)
+            with cols[0]:
+                if st.button("🔓", key=f"lock_{key}",
+                             help="Unlock this section",
+                             use_container_width=True):
+                    st.session_state[edit_key] = False
+                    if _toggle_lock(project, key, lock=False):
+                        st.rerun()
+        else:
+            show_accept_reject = provenance in ("ai_generated", "ai_then_human")
+            cols = st.columns(5) if show_accept_reject else st.columns(3)
+
+            with cols[0]:
                 if st.button(
-                    "✏️ Edit",
+                    "✏️",
                     key=f"edit_{key}",
-                    help=f"Manually edit the {label} lyrics",
+                    help="Manually edit the lyrics",
                     use_container_width=True,
                 ):
                     st.session_state[edit_key] = True
                     st.rerun()
-            with regen_col:
+            with cols[1]:
                 if st.button(
-                    "↻ Regenerate",
+                    "↻",
                     key=f"regen_{key}",
-                    help=f"Ask Gemini to rewrite the {label} only",
+                    help="Rewrite this section",
                     use_container_width=True,
                 ):
                     success = _run_section_regeneration(project, key)
                     if success:
+                        st.rerun()
+
+            if show_accept_reject:
+                with cols[2]:
+                    if st.button(
+                        "✓",
+                        key=f"accept_{key}",
+                        help="Approve this draft",
+                        use_container_width=True,
+                    ):
+                        # Idempotency guard: if this section's most recent
+                        # event is already an acceptance, repeat clicks are a
+                        # no-op. Without this, mashing Accept could trivially
+                        # inflate the direction_score in the Passport, since
+                        # it counts raw event frequency (utils/contribution.py).
+                        last_for_section = next(
+                            (e for e in reversed(project.timeline)
+                             if e.get("metadata", {}).get("section_key") == key),
+                            None,
+                        )
+                        if last_for_section and last_for_section.get("event_type") == "section_accepted":
+                            st.toast("Already accepted — no change needed.", icon="✅")
+                        else:
+                            project.version += 1
+                            append_event(
+                                project.timeline,
+                                event_type  = "section_accepted",
+                                actor       = "Human",
+                                description = f"Section accepted: {key}",
+                                metadata    = {"section_key": key},
+                            )
+                            try:
+                                save_project(project, check_conflict=True)
+                            except (OSError, ProjectConflictError) as exc:
+                                st.error(f"**Could not save after accept.**\n\n{exc}")
+                            else:
+                                st.rerun()
+                with cols[3]:
+                    if st.button(
+                        "✕",
+                        key=f"reject_{key}",
+                        help="Reject and regenerate",
+                        use_container_width=True,
+                    ):
+                        project.version += 1
+                        append_event(
+                            project.timeline,
+                            event_type  = "section_rejected",
+                            actor       = "Human",
+                            description = f"Section rejected: {key}",
+                            metadata    = {"section_key": key},
+                        )
+                        # Save the rejection first — the human's decision must
+                        # survive even if the regeneration call below fails.
+                        try:
+                            save_project(project, check_conflict=True)
+                        except (OSError, ProjectConflictError) as exc:
+                            st.error(f"**Could not save rejection.**\n\n{exc}")
+                        # Rejection immediately triggers regeneration.
+                        success = _run_section_regeneration(project, key)
+                        if success:
+                            st.rerun()
+
+            with cols[4] if show_accept_reject else cols[2]:
+                if st.button("🔒", key=f"lock_{key}",
+                             help="Freeze this section",
+                             use_container_width=True):
+                    st.session_state[edit_key] = False
+                    if _toggle_lock(project, key, lock=True):
                         st.rerun()
 
     # Bottom margin spacer
@@ -741,9 +813,11 @@ def _render_timeline(timeline: list) -> None:
         abs_ts      = _html.escape(timestamp)
 
         if actor == "Human":
-            dot_col, actor_c, actor_bg, actor_br = "#1DB954", "#1DB954", "#1DB95418", "#1DB95440"
+            # Electric lime — human creative decisions.
+            dot_col, actor_c, actor_bg, actor_br = "#A3E635", "#A3E635", "#A3E63518", "#A3E63540"
         elif actor == "AI":
-            dot_col, actor_c, actor_bg, actor_br = "#8B5CF6", "#A78BFA", "#8B5CF618", "#8B5CF640"
+            # Electric cyan — AI-generated actions.
+            dot_col, actor_c, actor_bg, actor_br = "#22D3EE", "#22D3EE", "#22D3EE18", "#22D3EE40"
         else:
             dot_col, actor_c, actor_bg, actor_br = "#52525B", "#71717A", "#52525B18", "#52525B40"
 
@@ -752,7 +826,7 @@ def _render_timeline(timeline: list) -> None:
             f"<div style='position:absolute;left:-1.22rem;top:0.85rem;"
             f"width:11px;height:11px;border-radius:50%;"
             f"background:{dot_col};border:2px solid #0F0F11;"
-            f"box-shadow:0 0 0 2px {dot_col}30;'></div>"
+            f"box-shadow:0 0 8px {dot_col}99,0 0 0 2px {dot_col}30;'></div>"
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
             f"border-radius:9px;padding:0.8rem 1rem;'>"
             f"<div style='display:flex;justify-content:space-between;"
@@ -775,6 +849,168 @@ def _render_timeline(timeline: list) -> None:
         )
     tl += "</div>"
     st.markdown(tl, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Contribution Dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_contribution_dashboard(project) -> None:
+    """Render the Contribution Dashboard card and cache the result on first compute.
+
+    Called from render() inside the right column, below the Creative Timeline.
+    If the project has no sections yet, shows a placeholder instead.
+
+    Staleness: recomputes whenever project.contribution is empty or its
+    computed_at is older than the last timeline event's timestamp.
+    """
+    has_song = bool(project.song.get("sections"))
+
+    _label("◎ Contribution")
+
+    if not has_song:
+        st.markdown(
+            "<div style='background:#18181B;border:1px solid #2D2D31;"
+            "border-radius:9px;padding:1.1rem 1rem;text-align:center;"
+            "margin-bottom:1rem;'>"
+            "<div style='font-size:0.8rem;color:#A1A1AA;'>Generate a song first.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Staleness check ───────────────────────────────────────────────────────
+    # Compare against the last *creative* event — ignoring contribution_computed
+    # and passport_exported, which are derived/export events, not creative actions.
+    # Without this, a contribution_computed event would always make the cache look
+    # fresh and prevent any future recompute after a real action.
+    _DERIVED_EVENTS = {"contribution_computed", "passport_exported"}
+    creative_events = [
+        e for e in project.timeline
+        if e.get("event_type") not in _DERIVED_EVENTS
+    ]
+    cached      = project.contribution or {}
+    computed_at = cached.get("computed_at", "")
+    last_ts     = creative_events[-1]["timestamp"] if creative_events else ""
+    is_stale    = (not computed_at) or (last_ts and computed_at < last_ts)
+
+    if is_stale:
+        result = compute_contribution(project)
+        project.contribution = result
+        # Set contribution_pct on any AI collaborator entries.
+        for collab in project.collaborators:
+            if collab.get("role") == "ai_model":
+                collab["contribution_pct"] = result["ai_pct"]
+        project.version += 1
+        append_event(
+            project.timeline,
+            event_type  = "contribution_computed",
+            actor       = "AI",
+            description = "Contribution split computed",
+            metadata    = {
+                "human_pct":       result["human_pct"],
+                "ai_pct":          result["ai_pct"],
+                "direction_score": result["direction_score"],
+                "methodology_version": result["methodology_version"],
+            },
+        )
+        try:
+            save_project(project, check_conflict=True)
+        except (OSError, ProjectConflictError) as exc:
+            st.warning(f"Could not cache contribution data: {exc}")
+        cached = result
+
+    human_pct       = cached.get("human_pct",       0.0)
+    ai_pct          = cached.get("ai_pct",           0.0)
+    direction_score = cached.get("direction_score",  0.0)
+
+    # ── Render ────────────────────────────────────────────────────────────────
+    # Two-segment authorship bar.
+    human_w = max(human_pct, 0)
+    ai_w    = max(ai_pct,    0)
+
+    bar_html = (
+        "<div style='display:flex;height:8px;border-radius:4px;overflow:hidden;"
+        "margin:0.5rem 0 0.85rem;'>"
+        f"<div style='flex:{human_w};background:#1DB954;'></div>"
+        f"<div style='flex:{ai_w};background:#8B5CF6;'></div>"
+        "</div>"
+    )
+
+    st.markdown(
+        f"<div style='background:#18181B;border:1px solid #2D2D31;"
+        f"border-left:3px solid #3B82F6;border-radius:9px;"
+        f"padding:0.9rem 1.05rem;margin-bottom:1rem;'>"
+        f"<div style='display:flex;justify-content:space-between;"
+        f"margin-bottom:0.15rem;'>"
+        f"<span style='font-size:0.78rem;color:#1DB954;font-weight:600;'>"
+        f"Human {human_pct}%</span>"
+        f"<span style='font-size:0.78rem;color:#8B5CF6;font-weight:600;'>"
+        f"AI {ai_pct}%</span>"
+        f"</div>"
+        f"{bar_html}"
+        f"<div style='font-size:0.75rem;color:#A1A1AA;margin-top:0.3rem;'>"
+        f"Direction score <span style='color:#FAFAFA;font-weight:600;'>"
+        f"{direction_score}%</span> &nbsp;·&nbsp; "
+        f"<span style='font-size:0.68rem;'>How much you steered the AI</span>"
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Export Passport button ────────────────────────────────────────────────
+    if st.button(
+        "🛂  Export Passport",
+        key="export_passport",
+        help="Download a Creative Passport PDF with the full timeline and contribution data",
+        use_container_width=True,
+        disabled=not has_song,
+    ):
+        # Stamp the watermark into project.passport BEFORE building the PDF —
+        # build_passport_pdf() reads project.passport.get("watermark_id") to
+        # print it on the page, so generating the watermark afterward meant
+        # every exported PDF permanently showed "unassigned until export"
+        # even though the correct value was saved to the project file.
+        watermark = str(uuid4())
+        project.passport.update({
+            "exported_at":    datetime.now().isoformat(),
+            "export_format":  "pdf",
+            "watermark_id":   watermark,
+            # Never overwrite human-approved wording.
+            "transparency_statement": project.passport.get("transparency_statement", ""),
+            "authorship_line":        project.passport.get("authorship_line", ""),
+        })
+
+        try:
+            pdf_bytes = build_passport_pdf(project)
+        except Exception as exc:
+            st.error(f"**Passport generation failed.**\n\n{exc}")
+        else:
+            project.version += 1
+            append_event(
+                project.timeline,
+                event_type  = "passport_exported",
+                actor       = "Human",
+                description = "Creative Passport exported as PDF",
+                metadata    = {
+                    "export_format": "pdf",
+                    "watermark_id":  watermark,
+                },
+            )
+            try:
+                save_project(project, check_conflict=True)
+            except (OSError, ProjectConflictError) as exc:
+                st.warning(f"Passport built but could not save metadata: {exc}")
+
+            file_name = f"{project.name.replace(' ', '_')}_passport.pdf"
+            st.download_button(
+                label     = "⬇ Download Creative Passport",
+                data      = pdf_bytes,
+                file_name = file_name,
+                mime      = "application/pdf",
+                key       = "download_passport",
+                use_container_width=True,
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -867,6 +1103,9 @@ def render() -> None:
         # Creative Timeline
         _label("◷ Creative Timeline")
         _render_timeline(project.timeline)
+
+        # Contribution Dashboard
+        _render_contribution_dashboard(project)
 
     # ═══════════════════════════════════════
     # LEFT — Generation or Song Display

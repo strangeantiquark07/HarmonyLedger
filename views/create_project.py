@@ -1,7 +1,7 @@
 import streamlit as st
 
 from utils.models import Project, PROJECT_NAME_MAX_LENGTH
-from utils.storage import save_project, list_projects
+from utils.storage import save_project, list_projects, ProjectConflictError
 from utils.timeline import append_event
 from utils.presets import GENRE_PRESETS, VIBE_MODIFIERS
 
@@ -31,6 +31,7 @@ def render() -> None:
         ("cp_vibe_text",    ""),
         ("cp_preset_genre", ""),
         ("cp_error",        ""),
+        ("cp_applied_mods", []),
     ]:
         if _k not in st.session_state:
             st.session_state[_k] = _v
@@ -87,6 +88,9 @@ def render() -> None:
                     ):
                         st.session_state.cp_vibe_text    = GENRE_PRESETS[key]["vibe"]
                         st.session_state.cp_preset_genre = GENRE_PRESETS[key]["genre"]
+                        # Preset replaces the vibe text, so any applied
+                        # modifier textures are gone — clear their toggles too.
+                        st.session_state.cp_applied_mods = []
                         st.rerun()
 
         # Active preset badge
@@ -112,17 +116,33 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-        # 2-column modifier grid
+        # 2-column modifier grid — applied modifiers show green (primary) and
+        # click again to remove their texture from the vibe (toggle).
         mod_keys = VIBE_MODIFIERS
         for i in range(0, len(mod_keys), 2):
             mc1, mc2 = st.columns(2, gap="small")
             for col, mod in zip([mc1, mc2], mod_keys[i: i + 2]):
                 with col:
-                    if st.button(mod["label"], key=f"mod_{mod['label']}", use_container_width=True):
-                        cur = st.session_state.cp_vibe_text.rstrip()
-                        st.session_state.cp_vibe_text = (
-                            cur + (" " if cur else "") + mod["text"]
-                        )
+                    is_on = mod["label"] in st.session_state.cp_applied_mods
+                    if st.button(
+                        mod["label"],
+                        key=f"mod_{mod['label']}",
+                        type="primary" if is_on else "secondary",
+                        use_container_width=True,
+                    ):
+                        if is_on:
+                            st.session_state.cp_applied_mods.remove(mod["label"])
+                            st.session_state.cp_vibe_text = (
+                                st.session_state.cp_vibe_text
+                                .replace(mod["text"], "", 1)
+                                .replace("  ", " ").strip()
+                            )
+                        else:
+                            st.session_state.cp_applied_mods.append(mod["label"])
+                            cur = st.session_state.cp_vibe_text.rstrip()
+                            st.session_state.cp_vibe_text = (
+                                cur + (" " if cur else "") + mod["text"]
+                            )
                         st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -270,8 +290,8 @@ def render() -> None:
         )
 
         try:
-            save_project(project)
-        except OSError as exc:
+            save_project(project, check_conflict=True)
+        except (OSError, ProjectConflictError) as exc:
             st.session_state.cp_error = f"Could not save project: {exc}"
             st.rerun()
             return
@@ -281,5 +301,6 @@ def render() -> None:
         st.session_state.active_project_id = project.project_id
         st.session_state.cp_vibe_text      = ""
         st.session_state.cp_preset_genre   = ""
+        st.session_state.cp_applied_mods   = []
         st.session_state.page              = "View Project"
         st.rerun()

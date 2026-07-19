@@ -51,20 +51,37 @@ st.markdown("""
 /* ═══════════════════════════════════════════════════════
    1. KILL THE WHITE STRIP / STREAMLIT CHROME
    ═══════════════════════════════════════════════════════ */
-/* Top toolbar & deploy badge */
-[data-testid="stToolbar"],
+/* Deploy badge, running-man status, and the app-menu footer */
 [data-testid="stDecoration"],
 [data-testid="stStatusWidget"],
-header[data-testid="stHeader"],
 #MainMenu,
 footer {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
 }
+/* The header/toolbar must stay mounted (not display:none) — Streamlit renders
+   the sidebar's expand arrow (stExpandSidebarButton) INSIDE the toolbar, and
+   a display:none ancestor unmounts its children entirely, breaking the only
+   way to reopen a collapsed sidebar. Instead: keep the toolbar in the layout
+   but shrink it to just the expand button and blend it into the background,
+   and hide its other children (deploy button, "..." menu) individually. */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 2.75rem !important;
+}
+[data-testid="stToolbar"] {
+    background: transparent !important;
+}
+[data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"] {
+    display: none !important;
+}
 /* Remove the default top padding that the hidden header leaves */
 .block-container {
-    padding-top: 1.5rem !important;
+    /* Header is now a real 2.75rem-tall element (not display:none), so this
+       only needs a little breathing room, not a full offset for it. */
+    padding-top: 0.6rem !important;
     padding-bottom: 2rem !important;
     padding-left: 2.25rem !important;
     padding-right: 2.25rem !important;
@@ -141,7 +158,7 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
 /* ═══════════════════════════════════════════════════════
    5. BUTTONS
    ═══════════════════════════════════════════════════════ */
-[data-testid="stButton"] > button {
+[data-testid="stButton"] button {
     border-radius: 7px !important;
     font-weight: 500 !important;
     font-size: 0.875rem !important;
@@ -149,25 +166,35 @@ p, li { color: #C8C8CC; font-size: 0.9375rem; line-height: 1.65; }
     border: 1px solid #3A3A3F !important;
     background: #222226 !important;
     color: #C4C4C8 !important;
-    padding: 0.4rem 0.9rem !important;
+    padding: 0.4rem 0.5rem !important;
+    white-space: nowrap !important;   /* never wrap a label to two lines */
 }
-[data-testid="stButton"] > button:hover {
+/* Streamlit's inner label <p> sets break-word styles of its own, so the
+   no-wrap rules must be applied there directly.  NOTE: descendant selector
+   ("stButton button", not "> button") is required — buttons with help=
+   tooltips are nested inside an extra stTooltipHoverTarget wrapper div. */
+[data-testid="stButton"] button p {
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+}
+[data-testid="stButton"] button:hover {
     background: #2E2E34 !important;
     border-color: #52525B !important;
     color: #FAFAFA !important;
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
 }
-[data-testid="stButton"] > button:active {
+[data-testid="stButton"] button:active {
     transform: translateY(0) !important;
 }
-[data-testid="stButton"] > button[kind="primary"] {
+[data-testid="stButton"] button[kind="primary"] {
     background: #1DB954 !important;
     border-color: #1DB954 !important;
     color: #0A0A0B !important;
     font-weight: 600 !important;
 }
-[data-testid="stButton"] > button[kind="primary"]:hover {
+[data-testid="stButton"] button[kind="primary"]:hover {
     background: #1fcc5e !important;
     border-color: #1fcc5e !important;
     box-shadow: 0 2px 12px rgba(29,185,84,0.35) !important;
@@ -393,25 +420,30 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Coming-soon ───────────────────────────────────
+    # ── Live features ──────────────────────────────────
     st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
     st.markdown("""
     <div style="padding:0.25rem 1.1rem 0.25rem;">
         <span style="font-size:0.65rem;font-weight:700;text-transform:uppercase;
-                     letter-spacing:0.1em;color:#71717A;">Coming in Phase 3+</span>
+                     letter-spacing:0.1em;color:#71717A;">Live Features</span>
     </div>
     """, unsafe_allow_html=True)
 
-    for _label in [
-        "🔒  Section Locking",
-        "🔄  Targeted Regen",
-        "📊  Contributions",
-        "🛂  Creative Passport",
-        "🔊  Audio Preview",
+    for _label, _live in [
+        ("Section Locking",   True),
+        ("Targeted Regen",    True),
+        ("Contributions",     True),
+        ("Creative Passport", True),
+        ("Audio Preview",     False),
     ]:
+        _fcol = "#1DB954" if _live else "#71717A"
+        _mark = "✓" if _live else "·"
         st.markdown(
-            f"<div style='font-size:0.8rem;color:#71717A;padding:0.2rem 1.1rem;'>"
-            f"{_label}</div>",
+            f"<div style='display:flex;align-items:center;gap:0.5rem;"
+            f"padding:0.2rem 1.1rem;'>"
+            f"<span style='color:{_fcol};font-size:0.75rem;'>{_mark}</span>"
+            f"<span style='font-size:0.8rem;color:{'#D4D4D8' if _live else '#71717A'};'>"
+            f"{_label}</span></div>",
             unsafe_allow_html=True,
         )
 
@@ -424,7 +456,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     _phases    = ["Storage", "AI Engine", "Section Lock", "Passport", "Audio", "Launch"]
-    _completed = 2  # Phase 2 done
+    _completed = 4  # Phases 1-4 done (Storage, AI Engine, Section Lock, Passport)
     for _i, _phase in enumerate(_phases):
         _done   = _i < _completed
         _cur    = _i == _completed
@@ -446,26 +478,10 @@ with st.sidebar:
     st.markdown("""
     <div style="margin-top:auto;padding:1.25rem 1.1rem 1rem;
                 border-top:1px solid #2D2D31;margin-top:1rem;">
-        <div style="font-size:0.68rem;color:#71717A;">Phase 2 · v0.2.0</div>
+        <div style="font-size:0.68rem;color:#71717A;">Phase 4 · v0.4.0</div>
         <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Page header  — branding strip shown on every page
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.markdown("""
-<div style="margin-bottom:0.1rem;">
-    <div style="font-size:2.1rem;font-weight:800;color:#FAFAFA;
-                letter-spacing:-0.04em;line-height:1.15;">🎵 HarmonyLedger</div>
-    <div style="font-size:0.9rem;color:#8E8E96;font-weight:400;
-                margin-top:0.3rem;letter-spacing:0.01em;">
-        The Creative Passport for Human-AI Songwriting
-    </div>
-</div>
-<hr style="margin:0.75rem 0 1.35rem;border-color:#2D2D31;">
-""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Router  — guard ensures page is always a known value before delegating
