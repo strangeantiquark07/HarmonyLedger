@@ -267,6 +267,7 @@ def test_C01_ten_consecutive_cycles_only_target_changes() -> list[str]:
                     f"when targeting '{target_key}'"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -308,6 +309,7 @@ def test_C02_locked_hashes_identical_across_all_cycles() -> list[str]:
     if song["sections"]["chorus"]["lyrics"] != original_ch:
         failures.append("chorus lyrics changed across 10 cycles (was locked)")
 
+    assert not failures, failures
     return failures
 
 
@@ -337,6 +339,7 @@ def test_C03_json_valid_after_every_cycle() -> list[str]:
                     f"Cycle {cycle_num}: section '{key}' missing after JSON round-trip"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -365,6 +368,7 @@ def test_C04_merge_no_data_loss_after_every_cycle() -> list[str]:
                         f"Cycle {cycle_num}: '{sec_key}.{env_key}' missing after graft"
                     )
 
+    assert not failures, failures
     return failures
 
 
@@ -386,6 +390,7 @@ def test_C05_drift_detection_no_false_positives_across_cycles() -> list[str]:
         except DriftError as e:
             failures.append(f"Cycle {cycle_num}: false-positive DriftError — {e}")
 
+    assert not failures, failures
     return failures
 
 
@@ -408,6 +413,7 @@ def test_C06_song_metadata_unchanged_across_cycles() -> list[str]:
                     f"Cycle {cycle_num}: metadata field '{k}' changed during regen"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -434,6 +440,7 @@ def test_C07_timeline_event_count_increments_per_regen() -> list[str]:
                 f"got {len(project.timeline)}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -455,6 +462,7 @@ def test_C08_edit_count_stays_zero_after_regen() -> list[str]:
                 f"after regen, got {ec}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -476,6 +484,7 @@ def test_C09_provenance_stays_ai_generated_after_regen() -> list[str]:
                 f"'ai_generated', got {prov!r}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -524,6 +533,7 @@ def test_C10_version_increments_on_every_action() -> list[str]:
                 f"got {project.version}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -556,6 +566,7 @@ def test_L01_all_sections_locked_regen_prevented() -> list[str]:
     except DriftError:
         pass  # Correct
 
+    assert not failures, failures
     return failures
 
 
@@ -581,6 +592,7 @@ def test_L02_no_sections_locked_regen_succeeds() -> list[str]:
     if song["sections"]["chorus"]["lyrics"] != "Brand new chorus.":
         failures.append("Regen did not update chorus lyrics")
 
+    assert not failures, failures
     return failures
 
 
@@ -614,6 +626,7 @@ def test_L03_lock_unlock_regen_reads_fresh_hash() -> list[str]:
     except DriftError as e:
         failures.append(f"DriftError after unlock+regen: {e}")
 
+    assert not failures, failures
     return failures
 
 
@@ -640,6 +653,7 @@ def test_L04_locking_same_section_twice_is_idempotent() -> list[str]:
     except DriftError as e:
         failures.append(f"DriftError after re-lock: {e}")
 
+    assert not failures, failures
     return failures
 
 
@@ -672,6 +686,7 @@ def test_L05_relock_after_regen_hashes_new_lyrics() -> list[str]:
     if snap.get("outro") == old_hash:
         failures.append("Hash still matches original lyrics — re-lock didn't update")
 
+    assert not failures, failures
     return failures
 
 
@@ -693,6 +708,7 @@ def test_D01_injected_lyrics_trigger_drift_error() -> list[str]:
     except DriftError:
         pass
 
+    assert not failures, failures
     return failures
 
 
@@ -711,6 +727,7 @@ def test_D02_whitespace_change_triggers_drift_error() -> list[str]:
     except DriftError:
         pass
 
+    assert not failures, failures
     return failures
 
 
@@ -729,6 +746,7 @@ def test_D03_case_change_triggers_drift_error() -> list[str]:
     except DriftError:
         pass
 
+    assert not failures, failures
     return failures
 
 
@@ -746,6 +764,7 @@ def test_D04_removing_locked_section_triggers_drift_error() -> list[str]:
     except DriftError:
         pass
 
+    assert not failures, failures
     return failures
 
 
@@ -770,6 +789,7 @@ def test_D05_multiple_drifted_sections_all_named() -> list[str]:
                     f"Label '{label}' not mentioned in DriftError message: {msg}"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -788,6 +808,7 @@ def test_D06_drift_check_noop_empty_snapshot() -> list[str]:
     except DriftError as e:
         failures.append(f"DriftError raised with empty snapshot: {e}")
 
+    assert not failures, failures
     return failures
 
 
@@ -824,6 +845,7 @@ def test_D07_snapshot_key_unlocked_midway_no_false_positive() -> list[str]:
     except DriftError:
         pass  # Correct — hash changed
 
+    assert not failures, failures
     return failures
 
 
@@ -851,6 +873,7 @@ def test_M01_unknown_section_key_raises_value_error() -> list[str]:
                 f"Unexpected {type(exc).__name__} for key {bad_key!r}: {exc}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -871,6 +894,7 @@ def test_M02_validate_section_missing_lyrics_key() -> list[str]:
         except ValueError:
             pass
 
+    assert not failures, failures
     return failures
 
 
@@ -885,6 +909,7 @@ def test_M03_validate_section_empty_string_lyrics() -> list[str]:
         except ValueError:
             pass
 
+    assert not failures, failures
     return failures
 
 
@@ -898,6 +923,7 @@ def test_M04_validate_section_none_lyrics() -> list[str]:
     except ValueError:
         pass
 
+    assert not failures, failures
     return failures
 
 
@@ -914,6 +940,7 @@ def test_M05_validate_section_non_string_lyrics() -> list[str]:
         except ValueError:
             pass
 
+    assert not failures, failures
     return failures
 
 
@@ -926,6 +953,7 @@ def test_M06_strip_fences_clean_json() -> list[str]:
     if result != clean:
         failures.append(f"Clean JSON was modified: {result!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -939,6 +967,7 @@ def test_M07_strip_fences_json_code_fence() -> list[str]:
     if result != expected:
         failures.append(f"Expected {expected!r}, got {result!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -952,6 +981,7 @@ def test_M08_strip_fences_plain_code_fence() -> list[str]:
     if parsed.get("lyrics") != "Raw block":
         failures.append(f"Expected lyrics 'Raw block', got: {parsed!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -968,6 +998,7 @@ def test_M09_strip_fences_prose_around_json() -> list[str]:
     except json.JSONDecodeError as exc:
         failures.append(f"JSON decode failed after fence strip: {exc} — got: {result!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -984,6 +1015,7 @@ def test_M10_strip_fences_embedded_json_no_fences() -> list[str]:
     except json.JSONDecodeError as exc:
         failures.append(f"JSON decode failed on embedded JSON: {exc} — got: {result!r}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1012,6 +1044,7 @@ def test_M11_api_failure_raises_song_generation_error() -> list[str]:
             f"Expected {MAX_RETRIES} API attempts, got {call_count[0]}"
         )
 
+    assert not failures, failures
     return failures
 
 
@@ -1044,6 +1077,7 @@ def test_M12_partial_invalid_json_raises_song_generation_error() -> list[str]:
                     f"Unexpected {type(exc).__name__} for bad JSON {bad!r}: {exc}"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -1097,6 +1131,7 @@ def test_M13_non_dict_json_raises_song_generation_error() -> list[str]:
                 f"_strip_fences should rescue array-of-object, but got error: {exc}"
             )
 
+    assert not failures, failures
     return failures
 
 
@@ -1138,6 +1173,7 @@ def test_X01_unicode_lyrics_hash_and_graft_correctly() -> list[str]:
         if song["sections"]["outro"]["lyrics"] != unicode_lyrics:
             failures.append(f"Unicode outro lyrics corrupted during {sec_key} regen")
 
+    assert not failures, failures
     return failures
 
 
@@ -1167,6 +1203,7 @@ def test_X02_emoji_lyrics_hash_and_graft_correctly() -> list[str]:
     if song["sections"]["verse_1"]["lyrics"] != emoji_lyrics:
         failures.append("Emoji verse_1 lyrics corrupted during chorus regen")
 
+    assert not failures, failures
     return failures
 
 
@@ -1186,6 +1223,7 @@ def test_X03_curly_braces_in_lyrics_dont_break_prompt() -> list[str]:
     except (KeyError, IndexError) as exc:
         failures.append(f"Prompt rendering failed with curly braces in lyrics: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1217,6 +1255,7 @@ def test_X04_quotes_and_backslashes_survive_json_roundtrip() -> list[str]:
     if snap != snap2:
         failures.append("Hashes differ after JSON round-trip")
 
+    assert not failures, failures
     return failures
 
 
@@ -1228,6 +1267,7 @@ def test_X05_very_long_lyrics_no_truncation() -> list[str]:
     long_lyrics = ("The river runs long and the valley is deep. " * 110).strip()
     if len(long_lyrics) < 4400:
         failures.append(f"Fixture too short: {len(long_lyrics)} chars (need >= 4400)")
+        assert not failures, failures
         return failures
 
     song  = _make_song(lock_keys=("verse_1",))
@@ -1253,6 +1293,7 @@ def test_X05_very_long_lyrics_no_truncation() -> list[str]:
     except DriftError as e:
         failures.append(f"DriftError with long locked lyrics: {e}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1275,6 +1316,7 @@ def test_X06_whitespace_only_lyrics_rejected_by_validator() -> list[str]:
                     f"Unexpected {type(exc).__name__} for whitespace lyrics: {exc}"
                 )
 
+    assert not failures, failures
     return failures
 
 
@@ -1296,6 +1338,7 @@ def test_X07_song_without_vibe_key_prompts_correctly() -> list[str]:
     except Exception as exc:
         failures.append(f"Unexpected error building prompt without vibe: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1317,6 +1360,7 @@ def test_S01_extra_top_level_keys_ignored_safely() -> list[str]:
     if song.get("producer") != "Bob":
         failures.append("Extra top-level key 'producer' was removed by graft")
 
+    assert not failures, failures
     return failures
 
 
@@ -1341,6 +1385,7 @@ def test_S02_section_extra_envelope_keys_preserved() -> list[str]:
             "targeting chorus"
         )
 
+    assert not failures, failures
     return failures
 
 
@@ -1372,6 +1417,7 @@ def test_S03_multiple_rapid_grafts_same_section() -> list[str]:
             f"got {song['sections']['verse_2']['edit_count']}"
         )
 
+    assert not failures, failures
     return failures
 
 
@@ -1404,6 +1450,7 @@ def test_S04_storage_round_trip_after_full_cycle() -> list[str]:
     except Exception as exc:
         failures.append(f"save_project failed: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     # Reload.
@@ -1412,6 +1459,7 @@ def test_S04_storage_round_trip_after_full_cycle() -> list[str]:
     except Exception as exc:
         failures.append(f"load_project failed: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     # Verify locked sections.
@@ -1438,6 +1486,7 @@ def test_S04_storage_round_trip_after_full_cycle() -> list[str]:
         )
 
     _cleanup_project(project)
+    assert not failures, failures
     return failures
 
 
@@ -1489,6 +1538,7 @@ def test_H01_human_edit_changes_lyrics() -> list[str]:
         failures.append(f"Expected lyrics {new_text!r}, got {actual!r}")
     if original == actual:
         failures.append("Lyrics did not change after human edit")
+    assert not failures, failures
     return failures
 
 
@@ -1504,6 +1554,7 @@ def test_H02_provenance_ai_to_ai_then_human() -> list[str]:
     prov = project.song["sections"]["chorus"]["provenance"]
     if prov != "ai_then_human":
         failures.append(f"Expected 'ai_then_human', got {prov!r}")
+    assert not failures, failures
     return failures
 
 
@@ -1519,6 +1570,7 @@ def test_H03_provenance_ai_then_human_stays_ai_then_human() -> list[str]:
     prov = project.song["sections"]["verse_2"]["provenance"]
     if prov != "ai_then_human":
         failures.append(f"Expected 'ai_then_human', got {prov!r}")
+    assert not failures, failures
     return failures
 
 
@@ -1534,6 +1586,7 @@ def test_H04_provenance_human_written_stays_human_written() -> list[str]:
     prov = project.song["sections"]["bridge"]["provenance"]
     if prov != "human_written":
         failures.append(f"Expected 'human_written', got {prov!r}")
+    assert not failures, failures
     return failures
 
 
@@ -1550,6 +1603,7 @@ def test_H05_edit_count_increments_per_edit() -> list[str]:
         if actual != expected:
             failures.append(f"After edit {expected}: expected edit_count={expected}, got {actual}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1563,6 +1617,7 @@ def test_H06_last_edited_by_set_to_human() -> list[str]:
     val = project.song["sections"]["chorus"].get("last_edited_by")
     if val != "Human":
         failures.append(f"Expected last_edited_by='Human', got {val!r}")
+    assert not failures, failures
     return failures
 
 
@@ -1579,6 +1634,7 @@ def test_H07_other_sections_unchanged_after_edit() -> list[str]:
             continue
         if project.song["sections"][key] != original[key]:
             failures.append(f"Section '{key}' changed unexpectedly after editing 'bridge'")
+    assert not failures, failures
     return failures
 
 
@@ -1594,6 +1650,7 @@ def test_H08_human_edit_timeline_event_logged() -> list[str]:
         failures.append(
             f"Expected {prev_count + 1} timeline events, got {len(project.timeline)}"
         )
+        assert not failures, failures
         return failures
 
     evt = project.timeline[-1]
@@ -1606,6 +1663,7 @@ def test_H08_human_edit_timeline_event_logged() -> list[str]:
         failures.append(f"Expected metadata.section_key='verse_1', got {meta.get('section_key')!r}")
     if meta.get("new_provenance") != "ai_then_human":
         failures.append(f"Expected metadata.new_provenance='ai_then_human', got {meta.get('new_provenance')!r}")
+    assert not failures, failures
     return failures
 
 
@@ -1625,6 +1683,7 @@ def test_H09_human_edited_section_locked_protects_drift() -> list[str]:
     # Verify snapshot captured verse_1.
     if "verse_1" not in snapshot:
         failures.append("verse_1 not in snapshot after locking")
+        assert not failures, failures
         return failures
 
     # Mutate the locked lyrics — drift check must fire.
@@ -1635,6 +1694,7 @@ def test_H09_human_edited_section_locked_protects_drift() -> list[str]:
     except DriftError:
         pass  # correct
 
+    assert not failures, failures
     return failures
 
 
@@ -1677,6 +1737,7 @@ def test_H10_regen_after_human_edit_uses_latest_lyrics() -> list[str]:
     except DriftError as exc:
         failures.append(f"Unexpected DriftError: {exc}")
 
+    assert not failures, failures
     return failures
 
 
@@ -1697,6 +1758,7 @@ def test_H11_human_edit_storage_round_trip() -> list[str]:
     except Exception as exc:
         failures.append(f"save_project failed: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     try:
@@ -1704,6 +1766,7 @@ def test_H11_human_edit_storage_round_trip() -> list[str]:
     except Exception as exc:
         failures.append(f"load_project failed: {exc}")
         _cleanup_project(project)
+        assert not failures, failures
         return failures
 
     sec = reloaded.song["sections"]["bridge"]
@@ -1723,6 +1786,7 @@ def test_H11_human_edit_storage_round_trip() -> list[str]:
         failures.append(f"Expected 1 human_edit timeline event, got {len(human_events)}")
 
     _cleanup_project(project)
+    assert not failures, failures
     return failures
 
 
