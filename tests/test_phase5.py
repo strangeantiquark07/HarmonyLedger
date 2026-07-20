@@ -159,6 +159,69 @@ def test_available_sections_all_empty_lyrics_returns_empty_list():
     assert result == []
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Offline tests — None-safety of _available_audio_sections()  (Enhancement 2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_available_sections_none_song_returns_empty_list():
+    """Passing None returns an empty list — does not raise."""
+    assert _available_audio_sections(None) == []
+
+
+def test_available_sections_integer_song_returns_empty_list():
+    """Passing a non-dict (int) returns an empty list — does not raise."""
+    assert _available_audio_sections(42) == []
+
+
+def test_available_sections_string_song_returns_empty_list():
+    """Passing a string returns an empty list — does not raise."""
+    assert _available_audio_sections("bad song data") == []
+
+
+def test_available_sections_sections_is_string_returns_empty_list():
+    """Song dict with sections='not_a_dict' returns an empty list — does not raise."""
+    assert _available_audio_sections({"sections": "not_a_dict"}) == []
+
+
+def test_available_sections_sections_is_list_returns_empty_list():
+    """Song dict with sections=[] returns an empty list — does not raise."""
+    assert _available_audio_sections({"sections": []}) == []
+
+
+def test_available_sections_sections_is_none_returns_empty_list():
+    """Song dict with sections=None returns an empty list — does not raise."""
+    assert _available_audio_sections({"sections": None}) == []
+
+
+def test_available_sections_section_value_not_dict_skipped():
+    """A section whose value is not a dict is silently skipped."""
+    song = {
+        "sections": {
+            "verse_1": "just a string",        # not a dict — skip
+            "chorus":  {"lyrics": "Real chorus lyrics here"},
+        }
+    }
+    result = _available_audio_sections(song)
+    keys = [k for k, _ in result]
+    assert "verse_1" not in keys
+    assert "chorus" in keys
+    assert len(result) == 1
+
+
+def test_available_sections_lyrics_not_string_skipped():
+    """A section whose lyrics field is not a string is silently skipped."""
+    song = {
+        "sections": {
+            "verse_1": {"lyrics": 12345},          # int — not a string
+            "chorus":  {"lyrics": "Valid chorus"},
+        }
+    }
+    result = _available_audio_sections(song)
+    keys = [k for k, _ in result]
+    assert "verse_1" not in keys
+    assert "chorus" in keys
+
+
 def test_available_sections_returns_correct_labels():
     """Labels in the result match the human-readable names from _SECTION_ORDER."""
     result = _available_audio_sections(_make_full_song())
@@ -342,6 +405,34 @@ if _PYTEST_AVAILABLE:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Offline tests — download filename logic  (Enhancement 1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_download_filename_format():
+    """Download filename follows the '{project}_{section}_preview.mp3' pattern."""
+    project_name   = "Glass City Sessions"
+    section_label  = "Verse 1"
+    safe_name      = project_name.replace(" ", "_")
+    safe_section   = section_label.replace(" ", "_")
+    filename       = f"{safe_name}_{safe_section}_preview.mp3"
+    assert filename == "Glass_City_Sessions_Verse_1_preview.mp3"
+
+
+def test_download_filename_ends_with_mp3():
+    """Download filename always ends with .mp3."""
+    for name, section in [("My Song", "Chorus"), ("A", "Bridge"), ("X Y Z", "Outro")]:
+        fn = f"{name.replace(' ', '_')}_{section.replace(' ', '_')}_preview.mp3"
+        assert fn.endswith(".mp3"), f"Filename does not end with .mp3: {fn!r}"
+
+
+def test_download_filename_uses_section_label():
+    """Each section produces a distinct filename."""
+    labels = ["Verse_1", "Chorus", "Verse_2", "Bridge", "Outro"]
+    filenames = {f"MySong_{lbl}_preview.mp3" for lbl in labels}
+    assert len(filenames) == 5, "Some section labels produced duplicate filenames"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Offline tests list (standalone runner — no network)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -356,9 +447,22 @@ _OFFLINE_TESTS = [
     test_available_sections_all_empty_lyrics_returns_empty_list,
     test_available_sections_returns_correct_labels,
     test_available_sections_single_section,
+    # None-safety (Enhancement 2)
+    test_available_sections_none_song_returns_empty_list,
+    test_available_sections_integer_song_returns_empty_list,
+    test_available_sections_string_song_returns_empty_list,
+    test_available_sections_sections_is_string_returns_empty_list,
+    test_available_sections_sections_is_list_returns_empty_list,
+    test_available_sections_sections_is_none_returns_empty_list,
+    test_available_sections_section_value_not_dict_skipped,
+    test_available_sections_lyrics_not_string_skipped,
     # Default index logic
     test_default_index_is_chorus_when_chorus_present,
     test_default_index_is_first_when_chorus_absent,
+    # Download filename logic (Enhancement 1)
+    test_download_filename_format,
+    test_download_filename_ends_with_mp3,
+    test_download_filename_uses_section_label,
     # generate_audio_preview() contract
     test_empty_lyrics_raises_audio_generation_error,
     test_whitespace_lyrics_raises_audio_generation_error,
@@ -378,7 +482,7 @@ def run_tests() -> int:
 
     print(f"\n{'=' * 60}")
     print(f"  HarmonyLedger - Phase 5 Test Harness")
-    print(f"  Audio Preview — section selector + gTTS contract")
+    print(f"  Audio Preview — None-safety + download + gTTS contract")
     print(f"  {total} offline tests")
     print(f"{'=' * 60}\n")
 

@@ -1019,7 +1019,7 @@ def _render_contribution_dashboard(project) -> None:
 # Phase 5 — Audio Preview
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _available_audio_sections(song: dict) -> list[tuple[str, str]]:
+def _available_audio_sections(song) -> list[tuple[str, str]]:
     """Return an ordered list of (section_key, label) for sections that have
     non-empty lyrics, in canonical display order.
 
@@ -1027,17 +1027,32 @@ def _available_audio_sections(song: dict) -> list[tuple[str, str]]:
     meaningful to speak.  The list respects _SECTION_ORDER so the selector
     always presents sections in the same sequence as the song cards above.
 
+    None-safe: any falsy, non-dict, or structurally invalid song value
+    returns an empty list rather than raising.  This keeps callers simple
+    and makes the function safe against un-generated or corrupted projects.
+
     Args:
-        song: The project.song dict (must have a "sections" key).
+        song: The project.song dict (should have a "sections" key).
+              Accepts None, empty dict, or any non-dict without raising.
 
     Returns:
-        A list of (key, label) tuples.  Empty list when no section has lyrics.
+        A list of (key, label) tuples.  Empty list when no section has lyrics
+        or when song/sections data is absent or malformed.
     """
+    # Guard: reject None, non-dict, or any falsy value immediately.
+    if not song or not isinstance(song, dict):
+        return []
     sections = song.get("sections", {})
+    # Guard: sections must be a dict (not a string, list, None, etc.).
+    if not isinstance(sections, dict):
+        return []
     result: list[tuple[str, str]] = []
     for key, label in _SECTION_ORDER:
-        lyrics = sections.get(key, {}).get("lyrics", "")
-        if lyrics and lyrics.strip():
+        sec = sections.get(key)
+        if not isinstance(sec, dict):
+            continue
+        lyrics = sec.get("lyrics", "")
+        if lyrics and isinstance(lyrics, str) and lyrics.strip():
             result.append((key, label))
     return result
 
@@ -1120,7 +1135,7 @@ def _render_audio_preview(project) -> None:
     audio_bytes = st.session_state.get("vp_audio_bytes")
 
     if audio_bytes is not None:
-        # ── Playback mode: player + Clear button ───────────────────────────
+        # ── Playback mode: player + Download + Clear ───────────────────────
         st.markdown(
             f"<div style='background:#18181B;border:1px solid #2D2D31;"
             f"border-left:3px solid {accent};border-radius:9px;"
@@ -1133,13 +1148,30 @@ def _render_audio_preview(project) -> None:
         )
         st.audio(audio_bytes, format="audio/mp3")
 
-        if st.button(
-            "✕  Clear Preview",
-            key="vp_audio_clear",
-            use_container_width=True,
-        ):
-            st.session_state["vp_audio_bytes"] = None
-            st.rerun()
+        # Download filename: "{project_name}_{section_label}.mp3"
+        # Spaces replaced with underscores; non-ASCII kept as-is (browsers handle it).
+        _safe_name = project.name.replace(" ", "_")
+        _safe_section = selected_label.replace(" ", "_")
+        _dl_filename = f"{_safe_name}_{_safe_section}_preview.mp3"
+
+        dl_col, clear_col = st.columns(2)
+        with dl_col:
+            st.download_button(
+                label     = "⬇  Download Audio (.mp3)",
+                data      = audio_bytes,
+                file_name = _dl_filename,
+                mime      = "audio/mpeg",
+                key       = "vp_audio_download",
+                use_container_width=True,
+            )
+        with clear_col:
+            if st.button(
+                "✕  Clear Preview",
+                key="vp_audio_clear",
+                use_container_width=True,
+            ):
+                st.session_state["vp_audio_bytes"] = None
+                st.rerun()
 
     else:
         # ── Generate mode: description card + button ───────────────────────
