@@ -30,6 +30,9 @@ _DEFAULTS = {
     "cp_error":          "",
     # open_project page state
     "op_search":         "",
+    # view_project — Phase 5 audio preview state
+    "vp_audio_bytes":      None,   # raw MP3 bytes from last gTTS call, or None
+    "vp_audio_project_id": None,   # project_id the bytes belong to (stale-audio guard)
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -434,7 +437,7 @@ with st.sidebar:
         ("Targeted Regen",    True),
         ("Contributions",     True),
         ("Creative Passport", True),
-        ("Audio Preview",     False),
+        ("Audio Preview",     True),
     ]:
         _fcol = "#1DB954" if _live else "#71717A"
         _mark = "✓" if _live else "·"
@@ -456,7 +459,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     _phases    = ["Storage", "AI Engine", "Section Lock", "Passport", "Audio", "Launch"]
-    _completed = 4  # Phases 1-4 done (Storage, AI Engine, Section Lock, Passport)
+    _completed = 5  # Phases 1-5 done (Storage, AI Engine, Section Lock, Passport, Audio)
     for _i, _phase in enumerate(_phases):
         _done   = _i < _completed
         _cur    = _i == _completed
@@ -478,7 +481,7 @@ with st.sidebar:
     st.markdown("""
     <div style="margin-top:auto;padding:1.25rem 1.1rem 1rem;
                 border-top:1px solid #2D2D31;margin-top:1rem;">
-        <div style="font-size:0.68rem;color:#71717A;">Phase 4 · v0.4.0</div>
+        <div style="font-size:0.68rem;color:#71717A;">Phase 5 · v0.5.0</div>
         <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)

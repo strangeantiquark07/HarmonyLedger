@@ -35,8 +35,9 @@ _DIRECTION_EVENT_TYPES: frozenset[str] = frozenset({
     "section_unlocked",
     "section_regenerated",
     "human_edit",
-    "section_accepted",   # Sub-Task 2a — tolerated as zero until that lands
-    "section_rejected",   # Sub-Task 2a — tolerated as zero until that lands
+    "section_accepted",          # Sub-Task 2a — tolerated as zero until that lands
+    "section_rejected",          # Sub-Task 2a — tolerated as zero until that lands
+    "audio_preview_generated",   # Phase 5 — previewing is a deliberate human decision
 })
 
 
