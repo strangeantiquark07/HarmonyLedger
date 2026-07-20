@@ -33,6 +33,7 @@ _DEFAULTS = {
     # view_project — Phase 5 audio preview state
     "vp_audio_bytes":      None,   # raw MP3 bytes from last gTTS call, or None
     "vp_audio_project_id": None,   # project_id the bytes belong to (stale-audio guard)
+    "vp_audio_section":    None,   # section_key the cached bytes were generated for
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:

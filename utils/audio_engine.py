@@ -84,7 +84,7 @@ def generate_audio_preview(
     if not lyrics or not lyrics.strip():
         raise AudioGenerationError(
             "Cannot generate audio preview: lyrics are empty. "
-            "Ensure the chorus section contains non-empty text."
+            "Ensure the selected section contains non-empty text."
         )
 
     # ambient is intentionally unused in Phase 5.

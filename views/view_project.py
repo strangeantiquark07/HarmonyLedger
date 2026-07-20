@@ -1019,35 +1019,47 @@ def _render_contribution_dashboard(project) -> None:
 # Phase 5 — Audio Preview
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _available_audio_sections(song: dict) -> list[tuple[str, str]]:
+    """Return an ordered list of (section_key, label) for sections that have
+    non-empty lyrics, in canonical display order.
+
+    Sections with empty or missing lyrics are excluded — there is nothing
+    meaningful to speak.  The list respects _SECTION_ORDER so the selector
+    always presents sections in the same sequence as the song cards above.
+
+    Args:
+        song: The project.song dict (must have a "sections" key).
+
+    Returns:
+        A list of (key, label) tuples.  Empty list when no section has lyrics.
+    """
+    sections = song.get("sections", {})
+    result: list[tuple[str, str]] = []
+    for key, label in _SECTION_ORDER:
+        lyrics = sections.get(key, {}).get("lyrics", "")
+        if lyrics and lyrics.strip():
+            result.append((key, label))
+    return result
+
+
 def _render_audio_preview(project) -> None:
     """Render the Audio Preview card at the bottom of the left column.
 
-    Generates a spoken MP3 preview of the chorus via gTTS and plays it
-    inside the app using st.audio().  The bytes are stored in session
-    state so the player survives re-renders without regenerating audio.
+    The user selects any available song section via a radio control; the
+    default is Chorus when present, otherwise the first available section.
+    Generated MP3 bytes are cached in session state keyed by both project_id
+    and section_key — switching section or project invalidates the cache
+    immediately, so the player never shows stale audio.
 
     Stale-audio guard: if the session state holds bytes from a different
-    project (user navigated away and back), they are silently discarded
-    before rendering so the wrong song's audio never plays for a new project.
+    project or a different section, they are silently cleared before rendering.
 
     Args:
         project: The loaded Project object. Must already have a generated
                  song (caller checks has_song before calling this function).
     """
-    # ── Stale-audio guard ──────────────────────────────────────────────────
-    # Clear cached bytes whenever the active project has changed.
-    if st.session_state.get("vp_audio_project_id") != project.project_id:
-        st.session_state["vp_audio_bytes"]      = None
-        st.session_state["vp_audio_project_id"] = project.project_id
-
-    # ── Extract chorus lyrics ──────────────────────────────────────────────
-    chorus_lyrics = (
-        project.song
-        .get("sections", {})
-        .get("chorus", {})
-        .get("lyrics", "")
-        .strip()
-    )
+    # ── Build the ordered list of previewable sections ─────────────────────
+    available = _available_audio_sections(project.song)
 
     # ── Section header ─────────────────────────────────────────────────────
     st.markdown(
@@ -1056,27 +1068,67 @@ def _render_audio_preview(project) -> None:
     )
     _label("🔊 Audio Preview")
 
-    # ── No chorus guard ────────────────────────────────────────────────────
-    if not chorus_lyrics:
+    # ── No sections guard ──────────────────────────────────────────────────
+    if not available:
         st.warning(
-            "No chorus lyrics available for audio preview. "
-            "Generate a song first, or ensure the Chorus section is not empty."
+            "No section lyrics are available for audio preview. "
+            "Generate a song first, or ensure at least one section is not empty."
         )
         return
+
+    # ── Section selector ───────────────────────────────────────────────────
+    # Default: chorus if available, else the first section in canonical order.
+    avail_keys   = [k for k, _ in available]
+    avail_labels = [lbl for _, lbl in available]
+    default_idx  = avail_keys.index("chorus") if "chorus" in avail_keys else 0
+
+    # st.radio rendered horizontally — all labels on one line, compact.
+    # The widget key is stable so Streamlit keeps the selected value across
+    # re-renders; the default_idx only applies on the very first render.
+    selected_label = st.radio(
+        "Select section",
+        options     = avail_labels,
+        index       = default_idx,
+        horizontal  = True,
+        key         = "vp_audio_section_radio",
+        label_visibility = "collapsed",
+    )
+    selected_key = avail_keys[avail_labels.index(selected_label)]
+
+    # ── Stale-audio guard ──────────────────────────────────────────────────
+    # Clear cached bytes when project or selected section has changed.
+    cached_pid = st.session_state.get("vp_audio_project_id")
+    cached_sec = st.session_state.get("vp_audio_section")
+    if cached_pid != project.project_id or cached_sec != selected_key:
+        st.session_state["vp_audio_bytes"]      = None
+        st.session_state["vp_audio_project_id"] = project.project_id
+        st.session_state["vp_audio_section"]    = selected_key
+
+    # ── Extract the chosen section's lyrics ────────────────────────────────
+    section_lyrics = (
+        project.song
+        .get("sections", {})
+        .get(selected_key, {})
+        .get("lyrics", "")
+        .strip()
+    )
+
+    # ── Section accent colour (matches section card colours above) ─────────
+    accent = _SECTION_COLORS.get(selected_key, "#52525B")
 
     # ── Player or Generate button ──────────────────────────────────────────
     audio_bytes = st.session_state.get("vp_audio_bytes")
 
     if audio_bytes is not None:
-        # ── Playback mode: show the player and a clear button ──────────────
+        # ── Playback mode: player + Clear button ───────────────────────────
         st.markdown(
-            "<div style='background:#18181B;border:1px solid #2D2D31;"
-            "border-left:3px solid #1DB954;border-radius:9px;"
-            "padding:0.75rem 1.05rem 0.5rem;margin-bottom:0.5rem;'>"
-            "<div style='font-size:0.72rem;color:#A1A1AA;margin-bottom:0.4rem;'>"
-            "Spoken preview of the <strong style='color:#FAFAFA;'>Chorus</strong> "
-            "— generated by gTTS.</div>"
-            "</div>",
+            f"<div style='background:#18181B;border:1px solid #2D2D31;"
+            f"border-left:3px solid {accent};border-radius:9px;"
+            f"padding:0.75rem 1.05rem 0.5rem;margin-bottom:0.5rem;'>"
+            f"<div style='font-size:0.72rem;color:#A1A1AA;margin-bottom:0.4rem;'>"
+            f"Spoken preview of <strong style='color:#FAFAFA;'>"
+            f"{_html.escape(selected_label)}</strong> — generated by gTTS.</div>"
+            f"</div>",
             unsafe_allow_html=True,
         )
         st.audio(audio_bytes, format="audio/mp3")
@@ -1090,30 +1142,30 @@ def _render_audio_preview(project) -> None:
             st.rerun()
 
     else:
-        # ── Generate mode: show the button ────────────────────────────────
+        # ── Generate mode: description card + button ───────────────────────
         st.markdown(
-            "<div style='background:#18181B;border:1px solid #2D2D31;"
-            "border-radius:9px;padding:0.75rem 1.05rem;margin-bottom:0.6rem;'>"
-            "<div style='font-size:0.82rem;color:#C4C4C8;line-height:1.6;'>"
-            "Generate a spoken preview of the <strong style='color:#FAFAFA;'>"
-            "Chorus</strong> using Google Text-to-Speech.</div>"
-            "</div>",
+            f"<div style='background:#18181B;border:1px solid #2D2D31;"
+            f"border-radius:9px;padding:0.75rem 1.05rem;margin-bottom:0.6rem;'>"
+            f"<div style='font-size:0.82rem;color:#C4C4C8;line-height:1.6;'>"
+            f"Generate a spoken preview of <strong style='color:#FAFAFA;'>"
+            f"{_html.escape(selected_label)}</strong> using Google Text-to-Speech.</div>"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
         if st.button(
-            "🔊  Preview Chorus",
+            f"🔊  Preview {selected_label}",
             key="vp_audio_preview",
             type="primary",
             use_container_width=True,
         ):
-            with st.spinner("Generating audio preview…"):
+            with st.spinner(f"Generating {selected_label} audio preview…"):
                 try:
-                    mp3_bytes = generate_audio_preview(chorus_lyrics)
+                    mp3_bytes = generate_audio_preview(section_lyrics)
                 except AudioGenerationError as exc:
                     st.error(
                         f"**Audio preview failed.**\n\n"
-                        f"gTTS could not generate speech for this chorus. "
+                        f"gTTS could not generate speech for **{selected_label}**. "
                         f"Check your internet connection and try again.\n\n"
                         f"**Detail:** {exc}"
                     )
@@ -1128,6 +1180,7 @@ def _render_audio_preview(project) -> None:
             # ── Store bytes in session state ───────────────────────────────
             st.session_state["vp_audio_bytes"]      = mp3_bytes
             st.session_state["vp_audio_project_id"] = project.project_id
+            st.session_state["vp_audio_section"]    = selected_key
 
             # ── Log timeline event ─────────────────────────────────────────
             project.version += 1
@@ -1135,12 +1188,13 @@ def _render_audio_preview(project) -> None:
                 project.timeline,
                 event_type  = "audio_preview_generated",
                 actor       = "Human",
-                description = "Chorus audio preview generated via gTTS",
+                description = f"{selected_label} audio preview generated via gTTS",
                 metadata    = {
-                    "section_key":  "chorus",
+                    "section_key":  selected_key,
+                    "section_label": selected_label,
                     "tts_provider": "gTTS",
                     "lang":         "en",
-                    "char_count":   len(chorus_lyrics),
+                    "char_count":   len(section_lyrics),
                 },
             )
 
