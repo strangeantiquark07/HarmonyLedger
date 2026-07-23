@@ -152,18 +152,21 @@ def _load_prompt_template() -> str:
     return _PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
-def _build_prompt(vibe: str, genre: str) -> str:
-    """Render the prompt template with the given vibe and genre.
+def _build_prompt(vibe: str, genre: str, language: str = "English") -> str:
+    """Render the prompt template with the given vibe, genre, and language.
 
     Args:
-        vibe:  The user's song vibe (free-text description).
-        genre: The project's genre (e.g. "Chillwave", "Indie Folk").
+        vibe:     The user's song vibe (free-text description).
+        genre:    The project's genre (e.g. "Chillwave", "Indie Folk").
+        language: The language in which lyrics and title should be written.
+                  Defaults to "English". Metadata fields remain in English
+                  regardless of this value.
 
     Returns:
         The fully rendered prompt string ready to send to Gemini.
     """
     template = _load_prompt_template()
-    return template.format(vibe=vibe, genre=genre)
+    return template.format(vibe=vibe, genre=genre, language=language)
 
 
 def _strip_fences(raw: str) -> str:
@@ -312,6 +315,7 @@ def _add_provenance_envelope(sections: dict) -> dict:
 def generate_song(
     vibe: str,
     genre: str = "",
+    language: str = "English",
     locked_sections: dict | None = None,  # noqa: F821  (reserved for Phase 3)
 ) -> dict:
     """Generate a complete, validated song from a vibe description.
@@ -326,6 +330,10 @@ def generate_song(
         genre:            The project's genre (e.g. "Chillwave"). Passed into
                           the prompt so Gemini stays on-brief. Defaults to an
                           empty string if the project has no genre set.
+        language:         The language in which the song title and lyrics
+                          (verse, chorus, bridge, outro) should be written.
+                          Defaults to "English". Metadata fields (mood, tempo,
+                          style, etc.) always remain in English.
         locked_sections:  Reserved for Phase 3 targeted regeneration. When
                           provided, the engine will pass locked section
                           content as context so regenerated sections stay
@@ -364,7 +372,7 @@ def generate_song(
             includes the attempt count and the last error detail.
         FileNotFoundError:   if prompts/song_starter_v1.txt is missing.
     """
-    prompt = _build_prompt(vibe=vibe, genre=genre)
+    prompt = _build_prompt(vibe=vibe, genre=genre, language=language)
 
     last_error: Exception | None = None
 
@@ -490,12 +498,14 @@ def _build_section_context(song: dict, target_key: str) -> str:
     return header + "\n\n".join(lines) + "\n\n"
 
 
-def _build_section_regen_prompt(section_key: str, song: dict) -> str:
+def _build_section_regen_prompt(section_key: str, song: dict, language: str = "English") -> str:
     """Render the section-regeneration prompt template.
 
     Args:
         section_key: The section to regenerate (e.g. "verse_1").
         song:        The full project.song dict — provides title, genre, etc.
+        language:    The language in which the regenerated lyrics should be
+                     written. Defaults to "English".
 
     Returns:
         The fully rendered prompt string ready to send to Gemini.
@@ -513,6 +523,7 @@ def _build_section_regen_prompt(section_key: str, song: dict) -> str:
         section_key    = section_key,
         section_label  = section_label,
         locked_context = locked_context,
+        language       = language,
     )
 
 
@@ -542,7 +553,7 @@ def _validate_section_response(data: dict) -> None:
 # Phase 3 public API — targeted section regeneration
 # ---------------------------------------------------------------------------
 
-def regenerate_section(section_key: str, song: dict) -> str:
+def regenerate_section(section_key: str, song: dict, language: str = "English") -> str:
     """Regenerate a single song section's lyrics via a focused Gemini prompt.
 
     This is the Phase 3 counterpart to generate_song(). It generates new
@@ -561,6 +572,9 @@ def regenerate_section(section_key: str, song: dict) -> str:
                      ("verse_1", "chorus", "verse_2", "bridge", "outro").
         song:        The full project.song dict. Must have at minimum:
                      "title", "genre", "style", "mood", and "sections".
+        language:    The language in which the regenerated lyrics should be
+                     written. Defaults to "English". Must match the language
+                     the project was created with so the song stays coherent.
 
     Returns:
         The new lyrics string (non-empty, unescaped plain text).
@@ -577,7 +591,7 @@ def regenerate_section(section_key: str, song: dict) -> str:
             f"Must be one of: {list(_REQUIRED_SECTIONS)}"
         )
 
-    prompt     = _build_section_regen_prompt(section_key, song)
+    prompt     = _build_section_regen_prompt(section_key, song, language=language)
     last_error: Exception | None = None
 
     for attempt in range(1, MAX_RETRIES + 1):

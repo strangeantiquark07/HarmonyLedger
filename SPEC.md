@@ -160,23 +160,40 @@ Both come straight from the timeline log, so the dashboard and the passport can 
 
 > **End-to-end Bob feature.** A small, self-contained feature built almost entirely by Bob — the clean "Bob shipped this whole thing itself" example for the README and demo.
 
-### Phase 6 — Testing, Documentation & Submission
+### Phase 6 — Final Verification, Documentation & Submission
 
-**What it is.** Prepare HarmonyLedger for submission: testing, documentation, demo video, and submitting a day early.
+**What it is.** Final testing and verification of HarmonyLedger, followed by cleaning the GitHub repository and completing the documentation.
 
-**Why it exists.** A polished project demonstrates maintainability, responsible-AI practice, and professional engineering — not just a working prototype.
+**Why it exists.** Ensure the final project is reliable, polished, consistent, and clearly communicates what was actually built.
 
-**Done bar.** GitHub repo complete, README finalized, ≤3-minute demo recorded (showing the lock-and-regenerate moment live), project submitted one day before the deadline.
+**Done bar.** Core functionality verified, GitHub repository cleaned and finalized, README complete, and project ready for submission.
 
 **Human decisions — direction & sign-off**
-- Record the ≤3-minute demo, leading with the live lock-and-regenerate moment.
-- Submit the project page one day before the deadline.
 
-**IBM Bob — builds & verifies**
-- *Agent Mode:* generate unit and integration tests.
-- *Ask Mode:* review the codebase, recommend refactors, and apply final UI polish.
-- *Agent Mode:* draft the README, install guide, architecture notes, and docstrings.
-- *Ask Mode:* help shape the demo script and project narrative.
+* Perform the final end-to-end acceptance test.
+* Review the completed project and approve it for submission.
+* Submit the project one day before the deadline.
+
+**IBM Bob — final review & verification**
+
+* *Ask Mode:* review the complete GitHub repository and identify outdated, redundant, or misleading files and documentation.
+* *Ask Mode:* verify that the codebase and README accurately reflect the final implementation.
+* *Ask Mode:* review the final architecture, code quality, and responsible-AI approach.
+* *Agent Mode:* apply the approved cleanup, documentation updates, and final corrections.
+
+**README must include:**
+
+* Problem statement
+* Solution description
+* AI approach and architecture
+* Selected challenge theme
+* How IBM Bob was used
+* Features and workflow
+* Technology stack and setup instructions
+* Responsible AI and authorship approach
+
+**Final verification:** The final codebase, GitHub repository, and README accurately represent the finished HarmonyLedger project.
+
 
 ---
 

@@ -6,6 +6,22 @@ from uuid import uuid4
 # short enough to render safely in UI titles, PDF headers, and filenames.
 PROJECT_NAME_MAX_LENGTH = 100
 
+# Languages supported for AI song generation.
+# The AI will generate title, verse, chorus, and bridge in the selected language.
+# Mood, tempo, and style metadata remain in English regardless of selection.
+SUPPORTED_LANGUAGES: tuple[str, ...] = (
+    "English",
+    "Hindi",
+    "Marathi",
+    "Telugu",
+    "Tamil",
+    "Spanish",
+    "French",
+    "Japanese",
+)
+
+DEFAULT_LANGUAGE: str = "English"
+
 # ---------------------------------------------------------------------------
 # Schema version history
 # ---------------------------------------------------------------------------
@@ -63,6 +79,11 @@ class Project:
     # Append-only record of every schema migration applied to this file.
     # Each entry: {"from": int, "to": int, "migrated_at": ISO-8601}
     schema_migrations: list = field(default_factory=list)
+
+    # Language for AI-generated content (title, verse, chorus, bridge, outro).
+    # Mood, tempo, style, and other metadata always remain in English.
+    # Defaults to "English" so old projects without this field load cleanly.
+    language: str = DEFAULT_LANGUAGE
 
     # ---------------------------------------------------------------------------
     # Song content — populated by ai_engine.generate_song() in Phase 2.
@@ -199,6 +220,10 @@ class Project:
         if not isinstance(created_at, str):
             raise ValueError("Project 'created_at' field must be a string.")
 
+        # Language defaults to English for old projects that predate this field.
+        raw_language = data.get("language", DEFAULT_LANGUAGE)
+        language = raw_language if raw_language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
         return cls(
             project_id=data.get("project_id", str(uuid4())),
             name=name,
@@ -209,6 +234,7 @@ class Project:
             version=data["version"],
             schema_version=CURRENT_SCHEMA_VERSION,
             schema_migrations=migrations,
+            language=language,
             song=dict(data.get("song", {})),
             timeline=list(data.get("timeline", [])),
             contribution=dict(data.get("contribution", {})),

@@ -150,7 +150,7 @@ This project was built with **IBM Bob**, IBM's agentic coding assistant, across 
 | Planning | Application architecture, JSON schema design, AI integration workflow, regeneration pipeline design |
 | Development | Google Gemini API integration, regeneration + drift-check logic, timeline logger, contribution dashboard, Creative Passport PDF, audio-preview feature |
 | Testing & QA | Regeneration test harness, unit/integration tests, edge-case hunting |
-| Documentation | README, architecture notes, docstrings, demo narrative |
+| Documentation | README, architecture notes, docstrings |
 
 We kept a running Bob decision log throughout the build (screenshots plus what was asked, produced, and changed) for transparency.
 

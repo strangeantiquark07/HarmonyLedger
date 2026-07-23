@@ -162,11 +162,12 @@ def _run_generation(project) -> bool:
 
     Returns True on success, False on failure (error already displayed).
     """
-    genre = project.song.get("genre", "")
+    genre    = project.song.get("genre", "")
+    language = getattr(project, "language", "English") or "English"
 
     with st.spinner("Composing your song with Gemini…"):
         try:
-            song_dict = generate_song(vibe=project.vibe, genre=genre)
+            song_dict = generate_song(vibe=project.vibe, genre=genre, language=language)
         except SongGenerationError as exc:
             st.error(
                 f"**Song generation failed.** Gemini returned an invalid response "
@@ -404,11 +405,13 @@ def _run_section_regeneration(project, section_key: str) -> bool:
     pre_snapshot = snapshot_locked_sections(project.song)
 
     # ── Step 2: call the targeted regeneration engine ────────────────────────
+    language = getattr(project, "language", "English") or "English"
     with st.spinner(f"Regenerating {section_key.replace('_', ' ').title()} with Gemini…"):
         try:
             new_lyrics = regenerate_section(
                 section_key = section_key,
                 song        = project.song,
+                language    = language,
             )
         except SongGenerationError as exc:
             st.error(
@@ -481,7 +484,7 @@ def _run_section_regeneration(project, section_key: str) -> bool:
 # Song rendering helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_song_header(song: dict) -> None:
+def _render_song_header(song: dict, language: str = "English") -> None:
     """Render the song title, metadata chips, and lyrical themes."""
     title  = song.get("title",          "Untitled")
     mood   = song.get("mood",           "—")
@@ -501,7 +504,7 @@ def _render_song_header(song: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    # Metadata chips row
+    # Metadata chips row — always in English; language chip shown separately
     chips = (
         _meta_chip("Mood",      mood,  "#C4C4C8") +
         _meta_chip("Tempo",     tempo, "#C4C4C8") +
@@ -509,6 +512,9 @@ def _render_song_header(song: dict) -> None:
         _meta_chip("Time",      sig,   "#C4C4C8") +
         _meta_chip("Style",     style, "#C4C4C8")
     )
+    # Language chip — only shown when it differs from English to avoid clutter
+    if language and language != "English":
+        chips += _meta_chip("Language", language, "#22D3EE")
     st.markdown(
         f"<div style='display:flex;flex-wrap:wrap;gap:0.5rem;"
         f"margin-bottom:0.9rem;'>{chips}</div>",
@@ -1280,7 +1286,8 @@ def render() -> None:
         return
 
     # ── Header ────────────────────────────────────────────────────────────────
-    genre = project.song.get("genre", "")
+    genre    = project.song.get("genre", "")
+    language = getattr(project, "language", "English") or "English"
     badge_html = _status_badge_html(project.status)
     genre_html = (
         f"<span style='display:inline-flex;align-items:center;gap:0.2rem;"
@@ -1288,13 +1295,19 @@ def render() -> None:
         f"padding:0.12rem 0.55rem;font-size:0.72rem;color:#A78BFA;"
         f"margin-left:0.35rem;'>♪ {_html.escape(genre)}</span>"
     ) if genre else ""
+    lang_html = (
+        f"<span style='display:inline-flex;align-items:center;gap:0.2rem;"
+        f"background:#22D3EE18;border:1px solid #22D3EE30;border-radius:999px;"
+        f"padding:0.12rem 0.55rem;font-size:0.72rem;color:#22D3EE;"
+        f"margin-left:0.35rem;'>🌐 {_html.escape(language)}</span>"
+    ) if language and language != "English" else ""
 
     st.markdown(
         f"<div style='margin-bottom:0.6rem;'>"
         f"<div style='display:flex;align-items:center;gap:0.65rem;"
         f"flex-wrap:wrap;margin-bottom:0.25rem;'>"
         f"<h1 style='margin:0;'>{_html.escape(project.name)}</h1>"
-        f"{badge_html}{genre_html}"
+        f"{badge_html}{genre_html}{lang_html}"
         f"</div>"
         f"<div style='font-size:0.78rem;color:#A1A1AA;'>"
         f"v{project.version} · "
@@ -1374,7 +1387,7 @@ def render() -> None:
         else:
             # ── Song display ──────────────────────────────────────────────────
             _label("🎵 Generated Song")
-            _render_song_header(project.song)
+            _render_song_header(project.song, language=language)
 
             st.markdown(
                 "<hr style='margin:0.5rem 0 1rem;border-color:#2D2D31;'>",

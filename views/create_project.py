@@ -1,6 +1,6 @@
 import streamlit as st
 
-from utils.models import Project, PROJECT_NAME_MAX_LENGTH
+from utils.models import Project, PROJECT_NAME_MAX_LENGTH, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE
 from utils.storage import save_project, list_projects, ProjectConflictError
 from utils.timeline import append_event
 from utils.presets import GENRE_PRESETS, VIBE_MODIFIERS
@@ -32,6 +32,7 @@ def render() -> None:
         ("cp_preset_genre", ""),
         ("cp_error",        ""),
         ("cp_applied_mods", []),
+        ("cp_language",     DEFAULT_LANGUAGE),
     ]:
         if _k not in st.session_state:
             st.session_state[_k] = _v
@@ -188,11 +189,27 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
 
+            # ── Language selector ─────────────────────
+            _label("Song Language")
+            lang_default_idx = list(SUPPORTED_LANGUAGES).index(
+                st.session_state.cp_language
+            ) if st.session_state.cp_language in SUPPORTED_LANGUAGES else 0
+            language = st.selectbox(
+                "Song Language",
+                options=list(SUPPORTED_LANGUAGES),
+                index=lang_default_idx,
+                label_visibility="collapsed",
+                help=(
+                    "The AI will write the song title and all lyrics in this language. "
+                    "Mood, tempo, and style metadata always stay in English."
+                ),
+            )
+
             # ── Song vibe ─────────────────────────────
             _label("Song Vibe")
             vibe = st.text_area(
                 "Song Vibe",
-                height=230,
+                height=195,
                 placeholder=(
                     "Describe the mood, genre, emotions, instruments…\n\n"
                     "Or pick a preset on the right →"
@@ -249,8 +266,9 @@ def render() -> None:
         name      = project_name.strip()
         vibe_text = vibe.strip()
 
-        # Sync back so a rerun restores the textarea value
+        # Sync back so a rerun restores the textarea value and language choice
         st.session_state.cp_vibe_text = vibe_text
+        st.session_state.cp_language  = language
 
         if not name:
             st.session_state.cp_error = "Please enter a project name."
@@ -278,6 +296,9 @@ def render() -> None:
             st.rerun()
             return
 
+        # Persist language selection
+        project.language = language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
         # Persist genre from preset
         if st.session_state.cp_preset_genre:
             project.song["genre"] = st.session_state.cp_preset_genre
@@ -302,5 +323,6 @@ def render() -> None:
         st.session_state.cp_vibe_text      = ""
         st.session_state.cp_preset_genre   = ""
         st.session_state.cp_applied_mods   = []
+        st.session_state.cp_language       = DEFAULT_LANGUAGE
         st.session_state.page              = "View Project"
         st.rerun()

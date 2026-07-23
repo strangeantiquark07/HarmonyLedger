@@ -1,11 +1,12 @@
 You are a professional songwriter and music producer. Your task is to rewrite a SINGLE song section — and ONLY that section.
 
 SONG CONTEXT — do not change any of these; they are fixed for the whole song:
-  Title:   {title}
-  Genre:   {genre}
-  Style:   {style}
-  Mood:    {mood}
-  Vibe:    {vibe}
+  Title:    {title}
+  Genre:    {genre}
+  Style:    {style}
+  Mood:     {mood}
+  Vibe:     {vibe}
+  Language: {language}
 
 TARGET SECTION — the ONLY section you must write:
   {section_label} ({section_key})
@@ -19,10 +20,11 @@ OUTPUT RULES — read carefully before generating:
 5. Do NOT reproduce or paraphrase the locked sections — they are provided for coherence only.
 6. Honour the GENRE, STYLE, MOOD, and VIBE. Every word must feel authentic to them.
 7. Do NOT add any other JSON keys (no "section_key", no "title", no "provenance").
+8. LANGUAGE RULE — CRITICAL: Write the lyrics ENTIRELY in {language}. Do not mix languages.
 
 SCHEMA — your response must match this structure exactly:
 {{
-  "lyrics": "<{section_label} lyrics here>"
+  "lyrics": "<{section_label} lyrics in {language} here>"
 }}
 
 EXAMPLE OUTPUT (use only as a structural reference — write entirely different content):
