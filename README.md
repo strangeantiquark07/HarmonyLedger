@@ -280,17 +280,49 @@ The application's core thesis: *the act of directing, locking, editing, acceptin
 
 This project was built with **IBM Bob**, IBM's agentic coding assistant, acting as the primary software engineer across the full development lifecycle. The human directed and reviewed; Bob planned, built, tested, and documented.
 
+HarmonyLedger uses two distinct AI systems on two different layers — keeping them separate is what makes the submission coherent:
+
+| Layer | System | Role |
+|---|---|---|
+| **The builder** | IBM Bob | Builds the application — architects, codes, generates test suites, writes docs. This is what the challenge means by "built using IBM Bob." |
+| **The runtime** | Google Gemini API | The model inside the shipped app. Turns a creator's vibe into a structured song and regenerates sections on request. |
+
+### What Bob Did Across the SDLC
+
 | Stage | What Bob Did |
 |---|---|
-| Planning (Plan Mode) | Designed the application architecture, stress-tested the JSON schema for extensibility, planned the AI integration workflow, designed the regeneration and drift-check pipeline, designed the audio preview system |
-| Development (Agent Mode) | Built the Google Gemini API integration and retry logic, the section lock/unlock system, the SHA-256 drift check, the JSON merge strategy, the inline human edit feature, the accept/reject pipeline, the unified timeline logger, the contribution dashboard, the Creative Passport PDF (ReportLab), the audio preview engine (gTTS), the multilingual generation system, the genre presets and vibe modifiers, the project library UI |
-| Testing & QA (Agent Mode) | Generated the 10-vibe Phase 2 integration harness, the Phase 3 lock/regeneration/drift test suite (40+ tests covering edge cases), the Phase 4 contribution and passport test suite, the Phase 5 audio engine test suite, the multilingual test suite |
-| Documentation | Drafted this README, architecture notes, module docstrings, and the phase planning documents in `docs/` |
-| Phase 6 Audit (Ask + Agent Mode) | Reviewed the complete codebase, identified undocumented features and inconsistencies, produced this final audit and updated all documentation |
+| Planning (Plan Mode) | Designed the application architecture, stress-tested the JSON schema for extensibility, planned the AI integration workflow and prompt template, designed the regeneration and drift-check pipeline |
+| Development (Agent Mode) | Built the Google Gemini API integration and retry logic, the section lock/unlock system, the SHA-256 drift check, the JSON merge strategy, the inline human edit feature, the accept/reject pipeline, the unified timeline logger, the contribution dashboard, the Creative Passport PDF (ReportLab), the Unicode font support for all 8 languages, the audio preview engine (gTTS), the multilingual generation system, the canonical authorship record and SHA-256 integrity hash, the genre presets and vibe modifiers |
+| Testing & QA (Agent Mode) | Generated the 10-vibe Phase 2 integration harness, the Phase 3 lock/regeneration/drift test suite (57 tests across edge cases including Unicode, case-only drift, whitespace-only drift), the Phase 4 contribution and passport test suites, the Phase 5 audio engine test suite, the multilingual test suite, the 61-test passport integrity suite |
+| Documentation | Drafted this README, architecture notes, module docstrings, the phase planning documents in `docs/`, the AI transparency statement in the Creative Passport |
+| Phase 6 Audit (Ask + Agent Mode) | Reviewed the complete codebase, audited against judging criteria, identified and resolved the Unicode rendering bug, added the SHA-256 integrity marker, produced the Bob decision log |
 
-Phase planning documents and Bob decision logs are in [`docs/`](docs/).
+### Three Bob Showcase Moments
 
-The parallel to the product itself is intentional: HarmonyLedger documents a human staying the author while an AI co-writes the music. This project documents exactly the same thing with the code — Bob is the AI co-writer, the human directs it and owns the decisions.
+These are the three interactions that best demonstrate Bob's engineering contribution:
+
+**Showcase 1 — AI pipeline (Phase 2):** Bob designed and built the complete Gemini API integration pipeline: prompt template design, JSON-only output constraints, fence-stripping fallback, validation rules, retry logic, and the 10-vibe acceptance harness. Bob both built and validated the feature that powers the entire app.
+
+**Showcase 2 — Drift check + test harness (Phase 3):** The signature feature — lock sections, regenerate only the one you don't — rests on a SHA-256 drift check that guarantees locked content is byte-for-byte unchanged. The human defined the contract ("any byte change = drift, including whitespace"). Bob built the check, then wrote 57 tests including adversarial cases (whitespace-only injection, case-only change, removal of a locked section) to prove it. Bob builds it, Bob's tests prove it, the human signs off.
+
+**Showcase 3 — Creative Passport (Phase 4):** The Creative Passport is the product's defining output — it documents how a human and an AI collaborated. Bob designed and built the certificate-quality PDF (vector donut chart, section authorship table, full timeline, transparency statement), the contribution dashboard, the canonical authorship record, and the SHA-256 integrity marker. The transparency statement text itself was drafted by Bob in Ask mode.
+
+### Human Decisions vs. Bob Outputs
+
+The human column in this build is intentionally short — limited to genuine authorship and correctness judgements that a person must own:
+
+| Decision | Owner |
+|---|---|
+| Drift-check contract: any byte change counts | Human |
+| Option B: real accept/reject (not approximated from lock/regen) | Human |
+| Contribution formula (provenance weights, direction events) | Human |
+| `computed_at` excluded from the integrity hash | Human |
+| No IBM AI runtime call (would conflict with determinism thesis) | Human |
+| All architecture, code, tests, docstrings, prompts, PDF design | **IBM Bob** |
+
+Phase planning documents and the full Bob decision log (14 entries covering every significant human–Bob interaction) are in [`docs/`](docs/).
+
+The parallel is intentional: HarmonyLedger documents a human staying the author while an AI co-writes the music. This project documents exactly the same thing with the code — Bob is the AI co-writer, the human directs it and owns the decisions.
 
 ---
 
