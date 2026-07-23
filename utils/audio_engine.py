@@ -49,6 +49,32 @@ class AudioGenerationError(Exception):
 # the whole app's default voice locale in one place.
 _DEFAULT_LANG: str = "en"
 
+# Maps utils.models.SUPPORTED_LANGUAGES (the project's song-generation
+# language) to a gTTS voice language code. Without this mapping, callers
+# that don't pass `lang` explicitly always get the English voice reading
+# non-English lyrics — which is what generate_audio_preview() calls with
+# for every language before this map existed.
+_SUPPORTED_LANGUAGE_TO_GTTS: dict[str, str] = {
+    "English":  "en",
+    "Hindi":    "hi",
+    "Marathi":  "mr",
+    "Telugu":   "te",
+    "Tamil":    "ta",
+    "Spanish":  "es",
+    "French":   "fr",
+    "Japanese": "ja",
+}
+
+
+def gtts_lang_code(language: str) -> str:
+    """Map a project's song-generation language to its gTTS voice code.
+
+    Falls back to the English voice for any language not in the map, so a
+    caller can always pass this straight through to generate_audio_preview()
+    without a KeyError.
+    """
+    return _SUPPORTED_LANGUAGE_TO_GTTS.get(language, _DEFAULT_LANG)
+
 
 # ---------------------------------------------------------------------------
 # Public API

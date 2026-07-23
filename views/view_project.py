@@ -40,7 +40,7 @@ from utils.ai_engine import (
     SongGenerationError,
     DriftError,
 )
-from utils.audio_engine import generate_audio_preview, AudioGenerationError
+from utils.audio_engine import generate_audio_preview, AudioGenerationError, gtts_lang_code
 from utils.contribution import compute_contribution
 from utils.passport import build_passport_pdf, compute_record_hash
 from utils.storage import (
@@ -1216,7 +1216,10 @@ def _render_audio_preview(project) -> None:
         ):
             with st.spinner(f"Generating {selected_label} audio preview…"):
                 try:
-                    mp3_bytes = generate_audio_preview(section_lyrics)
+                    mp3_bytes = generate_audio_preview(
+                        section_lyrics,
+                        lang=gtts_lang_code(getattr(project, "language", "") or "English"),
+                    )
                 except AudioGenerationError as exc:
                     st.error(
                         f"**Audio preview failed.**\n\n"
