@@ -181,8 +181,8 @@ All views read from the same project JSON, so they can never disagree with each 
 ### Installation
 
 ```bash
-git clone https://github.com/your-org/harmonyledger.git
-cd harmonyledger
+git clone https://github.com/strangeantiquark07/HarmonyLedger.git
+cd HarmonyLedger
 pip install -r requirements.txt
 ```
 
