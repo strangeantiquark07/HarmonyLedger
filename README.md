@@ -272,3 +272,4 @@ The parallel to the product itself is intentional: HarmonyLedger documents a hum
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
+
