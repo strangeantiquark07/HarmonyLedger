@@ -141,8 +141,15 @@ class Project:
     #   "export_format":         "pdf" | "json" | "html" | null,
     #   "transparency_statement":str,   # human-approved text
     #   "authorship_line":       str,   # e.g. "Written by Jane + Google Gemini"
-    #   "watermark_id":          uuid4 | null   # unique ID per export instance
+    #   "watermark_id":          uuid4 | null,  # unique ID per export instance
+    #   "record_hash":           str | null     # SHA-256 of canonical authorship
+    #                                           # record at time of export; see
+    #                                           # utils/passport.compute_record_hash()
     # }
+    #
+    # record_hash is absent in projects exported before this field was added.
+    # Callers must treat a missing or null record_hash as "no hash recorded"
+    # and must not treat its absence as an error.
     passport: dict = field(default_factory=dict)
 
     # ---------------------------------------------------------------------------

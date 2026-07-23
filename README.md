@@ -64,7 +64,7 @@ The foundation is simple: **everything is a view of one JSON file**. The song, t
 ### Ownership Documentation
 - 📜 **Unified creative timeline** — every action logged in one append-only, sequence-numbered timeline: project_created, ai_generated, section_locked, section_unlocked, section_regenerated, human_edit, section_accepted, section_rejected, contribution_computed, passport_exported, audio_preview_generated.
 - 📊 **Contribution dashboard** — a deterministic human-vs-AI split computed directly from the timeline. Two numbers: section-authorship split (based on provenance) and creative-direction score (based on steering decisions). Stale-aware: auto-refreshes when the timeline changes.
-- 🪪 **Creative Passport export** — a downloadable, watermarked PDF with the song's full timeline, contribution split, and a transparency statement. Human-approved statement text is never overwritten on re-export.
+- 🪪 **Creative Passport export** — a downloadable, watermarked PDF with the song's full timeline, contribution split, a transparency statement, and a SHA-256 integrity marker. The integrity marker is a hash of the canonical authorship record (provenance, timeline, contribution data, and export identity) computed at export time and printed on the provenance stamp. Human-approved statement text is never overwritten on re-export. The hash is an integrity marker for the recorded data — not a blockchain record or legal certification.
 
 ### Audio & Project Management
 - 🔊 **Audio preview** — generate a spoken preview of any song section (not just chorus) using Google Text-to-Speech. Cached in session; downloadable as a named `.mp3` file.

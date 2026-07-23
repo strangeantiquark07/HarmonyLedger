@@ -16,6 +16,22 @@ for anything that must stay legible), and vector-drawn shapes instead of
 emoji glyphs, since the base-14 PDF fonts used here don't have emoji glyphs
 and silently render them as an invisible/blank box.
 
+Integrity marker
+────────────────
+canonical_record(project) builds a deterministic, ordering-stable
+representation of the project's authorship record (provenance, timeline,
+contribution accounting, and relevant song metadata).
+
+compute_record_hash(project) returns a SHA-256 hex digest of that
+canonical record.  It uses the same hashlib/SHA-256 approach already used
+by the locked-section drift check in utils/ai_engine.py.
+
+The hash is computed at export time by the caller (views/view_project.py),
+stored in project.passport["record_hash"], and printed on the provenance
+stamp of every exported Passport.  It serves as an integrity marker for the
+recorded Creative Passport data — it is NOT a blockchain record, legal proof
+of ownership, or an external certification.
+
 Unicode font support
 ────────────────────
 All user-generated text (song title, project name, lyrics, timeline
@@ -60,7 +76,9 @@ The caller (views/view_project.py) is responsible for:
 build_passport_pdf() is pure: no side effects, no Streamlit imports.
 """
 
+import hashlib
 import io
+import json
 import os
 from datetime import datetime
 
@@ -396,6 +414,144 @@ class _NumberedCanvas(canvas_mod.Canvas):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Integrity marker — canonical record + SHA-256 hash
+# ─────────────────────────────────────────────────────────────────────────────
+
+def canonical_record(project) -> dict:
+    """Build a deterministic, ordering-stable representation of a project's
+    authorship record, suitable for hashing.
+
+    The record captures the information that defines the Creative Passport's
+    authorship claim:
+
+      • project identity  — project_id, version, language
+      • song metadata     — title, genre, model_used
+      • section provenance — lyrics + provenance state for each section,
+                             in a fixed canonical order (_SECTION_ORDER)
+      • timeline          — every event's seq, event_type, actor, description,
+                             and timestamp.  The seq field makes ordering
+                             stable independently of dict insertion order.
+      • contribution      — human_pct, ai_pct, direction_score,
+                             methodology_version
+                             (computed_at is excluded — it changes on every
+                             re-compute without affecting authorship data)
+      • passport identity — watermark_id and exported_at (already stamped by
+                             the caller before this function is called)
+
+    Deliberately excluded (would make the hash unstable without adding
+    authorship value):
+      • last_modified_at    — filesystem/session timestamp, not authorship
+      • contribution.computed_at — recalculated on every compute_contribution()
+      • PDF layout / font choices — not part of the data record
+      • dict insertion order — all dicts use sorted keys via json.dumps
+
+    Args:
+        project: A Project instance (utils.models.Project).
+
+    Returns:
+        A plain dict whose JSON serialisation (with sort_keys=True) is stable
+        across Python versions and dictionary ordering.
+    """
+    song    = project.song or {}
+    contrib = project.contribution or {}
+    passport= project.passport or {}
+
+    # ── Song sections in canonical order ──────────────────────────────────────
+    # Only include sections that exist in the project; preserve authorship fields.
+    sections_record: list[dict] = []
+    all_sections = song.get("sections", {})
+    for key in _SECTION_ORDER:
+        if key not in all_sections:
+            continue
+        sec = all_sections[key]
+        sections_record.append({
+            "key":        key,
+            "lyrics":     sec.get("lyrics", ""),
+            "provenance": sec.get("provenance", ""),
+            "locked":     bool(sec.get("locked", False)),
+        })
+    # Sections not in _SECTION_ORDER (custom sections, if ever added) go last,
+    # sorted alphabetically for determinism.
+    extra_keys = sorted(k for k in all_sections if k not in _SECTION_ORDER)
+    for key in extra_keys:
+        sec = all_sections[key]
+        sections_record.append({
+            "key":        key,
+            "lyrics":     sec.get("lyrics", ""),
+            "provenance": sec.get("provenance", ""),
+            "locked":     bool(sec.get("locked", False)),
+        })
+
+    # ── Timeline — ordered by seq, stable fields only ─────────────────────────
+    # Sorting by seq guarantees order regardless of list ordering on disk.
+    # timestamp is included because it is written once and never mutated.
+    timeline_record: list[dict] = sorted(
+        [
+            {
+                "seq":        e.get("seq", i),
+                "event_type": e.get("event_type", ""),
+                "actor":      e.get("actor", ""),
+                "description":e.get("description", ""),
+                "timestamp":  e.get("timestamp", ""),
+            }
+            for i, e in enumerate(project.timeline or [])
+        ],
+        key=lambda e: e["seq"],
+    )
+
+    # ── Contribution — authorship numbers only (no computed_at) ───────────────
+    contrib_record = {
+        "human_pct":           contrib.get("human_pct",           0.0),
+        "ai_pct":              contrib.get("ai_pct",              0.0),
+        "direction_score":     contrib.get("direction_score",     0.0),
+        "methodology_version": contrib.get("methodology_version", 1),
+    }
+
+    return {
+        "project_id":      project.project_id,
+        "project_version": project.version,
+        "language":        getattr(project, "language", "") or "",
+        "song_title":      song.get("title", ""),
+        "song_genre":      song.get("genre", ""),
+        "song_model_used": song.get("model_used", ""),
+        "sections":        sections_record,
+        "timeline":        timeline_record,
+        "contribution":    contrib_record,
+        "watermark_id":    passport.get("watermark_id") or "",
+        "exported_at":     passport.get("exported_at") or "",
+    }
+
+
+def compute_record_hash(project) -> str:
+    """Return a SHA-256 hex digest of the project's canonical authorship record.
+
+    Uses the same hashlib.sha256 approach as the locked-section drift check in
+    utils/ai_engine.snapshot_locked_sections().
+
+    The canonical record is serialised with json.dumps(sort_keys=True,
+    ensure_ascii=False) to guarantee that:
+      • dictionary key order never affects the hash
+      • Unicode content is preserved verbatim (not escaped)
+      • the result is reproducible across Python versions
+
+    The hash is an integrity marker for the recorded Creative Passport data.
+    It is NOT a blockchain record, legal proof of ownership, or external
+    certification — it confirms only that this PDF was derived from the
+    recorded project state at the time of export.
+
+    Args:
+        project: A Project instance (utils.models.Project).
+
+    Returns:
+        A 64-character lowercase hex string (SHA-256 digest).
+    """
+    record = canonical_record(project)
+    serialised = json.dumps(record, sort_keys=True, ensure_ascii=False,
+                            separators=(",", ":"))
+    return hashlib.sha256(serialised.encode("utf-8")).hexdigest()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -485,6 +641,7 @@ def build_passport_pdf(project) -> bytes:
 
     passport      = project.passport or {}
     watermark_id  = passport.get("watermark_id") or "unassigned until export"
+    record_hash   = passport.get("record_hash") or ""
     # Use the timestamp already stamped by the caller (view_project.py) so the
     # value printed on the page matches the one saved to the project file and
     # the timeline event — not a second datetime.now() call made milliseconds later.
@@ -740,10 +897,17 @@ def build_passport_pdf(project) -> bytes:
     # Integrity line — only shown after at least one export
     if passport.get("exported_at"):
         story.append(Spacer(1, 4 * mm))
+        integrity_parts = [
+            "<b>Integrity:</b> source is project.json (append-only timeline)",
+            f"Passport ID: {watermark_id}",
+            f"Methodology v{meth_version}",
+        ]
+        if record_hash:
+            integrity_parts.append(
+                f"Record hash (SHA-256): {record_hash[:16]}\u2026{record_hash[-8:]}"
+            )
         story.append(Paragraph(
-            f"<b>Integrity:</b> source is project.json (append-only timeline)  "
-            f"\u00b7  Passport ID: {watermark_id}  "
-            f"\u00b7  Methodology v{meth_version}",
+            "  \u00b7  ".join(integrity_parts),
             ParagraphStyle("integrity", parent=styles["Normal"],
                            fontSize=7.5, textColor=_SUBTLE, leading=11,
                            fontName="Helvetica"),
@@ -951,11 +1115,18 @@ def build_passport_pdf(project) -> bytes:
 
     # ── Provenance stamp ──────────────────────────────────────────────────────
     story.append(Spacer(1, 6 * mm))
+    stamp_lines = (
+        f"<b>Project ID</b>  {project.project_id}<br/>"
+        f"<b>Watermark</b>  {watermark_id}<br/>"
+        f"<b>Exported</b>  {exported_at}  \u00b7  Project revision {project.version}"
+    )
+    if record_hash:
+        stamp_lines += (
+            f"<br/><b>Record Hash (SHA-256)</b>  {record_hash}"
+        )
     stamp = Table(
         [[Paragraph(
-            f"<b>Project ID</b>  {project.project_id}<br/>"
-            f"<b>Watermark</b>  {watermark_id}<br/>"
-            f"<b>Exported</b>  {exported_at}  \u00b7  Project revision {project.version}",
+            stamp_lines,
             ParagraphStyle("stamp", parent=muted, leading=12, fontSize=7.5,
                             textColor=_SUBTLE, fontName="Helvetica"),
         )]],

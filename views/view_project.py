@@ -42,7 +42,7 @@ from utils.ai_engine import (
 )
 from utils.audio_engine import generate_audio_preview, AudioGenerationError
 from utils.contribution import compute_contribution
-from utils.passport import build_passport_pdf
+from utils.passport import build_passport_pdf, compute_record_hash
 from utils.storage import (
     load_project, save_project, ProjectNotFoundError, ProjectCorruptedError,
     ProjectConflictError,
@@ -984,11 +984,12 @@ def _render_contribution_dashboard(project) -> None:
         use_container_width=True,
         disabled=not has_song,
     ):
-        # Stamp the watermark into project.passport BEFORE building the PDF —
-        # build_passport_pdf() reads project.passport.get("watermark_id") to
-        # print it on the page, so generating the watermark afterward meant
-        # every exported PDF permanently showed "unassigned until export"
-        # even though the correct value was saved to the project file.
+        # Stamp the watermark and export timestamp into project.passport BEFORE
+        # building the PDF — build_passport_pdf() reads these fields to print
+        # them on the page, so they must be present at build time.
+        #
+        # compute_record_hash() is called AFTER stamping watermark_id and
+        # exported_at so the hash covers those stable export-identity values.
         watermark = str(uuid4())
         project.passport.update({
             "exported_at":    datetime.now().isoformat(),
@@ -998,6 +999,12 @@ def _render_contribution_dashboard(project) -> None:
             "transparency_statement": project.passport.get("transparency_statement", ""),
             "authorship_line":        project.passport.get("authorship_line", ""),
         })
+        # Compute the integrity hash now that all passport identity fields are
+        # stamped.  The hash covers project_id, version, language, song
+        # provenance, timeline, contribution accounting, watermark_id, and
+        # exported_at — everything that makes this Passport instance unique and
+        # auditable.  See utils/passport.canonical_record() for the exact spec.
+        project.passport["record_hash"] = compute_record_hash(project)
 
         try:
             pdf_bytes = build_passport_pdf(project)
