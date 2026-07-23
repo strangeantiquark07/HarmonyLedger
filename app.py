@@ -366,22 +366,75 @@ if st.session_state.active_project_id:
 
 with st.sidebar:
 
-    # ── Brand wordmark ────────────────────────────────
-    _logo_img_tag = (
-        f"<img src='{_LOGO_B64}' width='28' height='28' "
-        f"style='border-radius:50%;object-fit:cover;flex-shrink:0;' "
+    # ── Brand hero block ──────────────────────────────
+    # Large centred logo with gold glow ring, big wordmark, tagline, divider.
+    _logo_inner = (
+        f"<img src='{_LOGO_B64}' width='96' height='96' "
+        f"style='border-radius:50%;object-fit:cover;display:block;' "
         f"alt='HarmonyLedger logo' />"
-    ) if _LOGO_B64 else "<span style='font-size:1.3rem;line-height:1;'>🎵</span>"
+    ) if _LOGO_B64 else (
+        "<div style='width:96px;height:96px;border-radius:50%;"
+        "background:#1A1A16;display:flex;align-items:center;justify-content:center;"
+        "font-size:2.8rem;line-height:1;'>🎵</div>"
+    )
 
     st.markdown(f"""
-    <div style="padding:1.25rem 1.1rem 0.85rem;border-bottom:1px solid #2D2D31;">
-        <div style="display:flex;align-items:center;gap:0.55rem;margin-bottom:0.3rem;">
-            {_logo_img_tag}
-            <span style="font-size:1.0rem;font-weight:700;color:#FAFAFA;
-                         letter-spacing:-0.02em;line-height:1.2;">HarmonyLedger</span>
+    <div style="
+        padding: 1.6rem 1rem 1.1rem;
+        border-bottom: 1px solid #2D2D31;
+        text-align: center;
+    ">
+        <!-- Glow ring + logo -->
+        <div style="
+            display: inline-block;
+            border-radius: 50%;
+            padding: 4px;
+            background: conic-gradient(#C49B45, #F5D07A, #C49B45, #7A5A10, #C49B45);
+            box-shadow:
+                0 0 18px 6px rgba(196,155,69,0.55),
+                0 0 42px 14px rgba(196,155,69,0.22),
+                0 0 72px 24px rgba(196,155,69,0.10);
+            margin-bottom: 0.85rem;
+        ">
+            <div style="
+                border-radius: 50%;
+                overflow: hidden;
+                width: 96px;
+                height: 96px;
+                background: #0F0F11;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            ">
+                {_logo_inner}
+            </div>
         </div>
-        <div style="font-size:0.7rem;color:#71717A;padding-left:2.1rem;
-                        line-height:1.3;">Creative Passport for Human-AI Songwriting</div>
+
+        <!-- Wordmark -->
+        <div style="
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #C49B45;
+            letter-spacing: -0.02em;
+            line-height: 1.15;
+            margin-bottom: 0.3rem;
+            text-shadow: 0 0 14px rgba(196,155,69,0.45);
+        ">HarmonyLedger</div>
+
+        <!-- Tagline -->
+        <div style="
+            font-size: 0.68rem;
+            color: #A1A1AA;
+            line-height: 1.4;
+            margin-bottom: 0.75rem;
+        ">Creative Passport for Human-AI Songwriting</div>
+
+        <!-- Gold divider -->
+        <div style="
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #C49B45 30%, #F5D07A 50%, #C49B45 70%, transparent);
+            opacity: 0.55;
+        "></div>
     </div>
     """, unsafe_allow_html=True)
 
