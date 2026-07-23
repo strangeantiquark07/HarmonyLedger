@@ -53,11 +53,6 @@ for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-# ── Sidebar logo (official Streamlit branding API — places logo at the very
-#    top of the sidebar and in the collapsed-sidebar button icon).
-if _LOGO_PATH.exists():
-    st.logo(str(_LOGO_PATH), size="large")
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
 # One consolidated <style> block.  Covers:
@@ -379,62 +374,20 @@ with st.sidebar:
     )
 
     st.markdown(f"""
-    <div style="
-        padding: 1.6rem 1rem 1.1rem;
-        border-bottom: 1px solid #2D2D31;
-        text-align: center;
-    ">
-        <!-- Glow ring + logo -->
-        <div style="
-            display: inline-block;
-            border-radius: 50%;
-            padding: 4px;
-            background: conic-gradient(#C49B45, #F5D07A, #C49B45, #7A5A10, #C49B45);
-            box-shadow:
-                0 0 18px 6px rgba(196,155,69,0.55),
-                0 0 42px 14px rgba(196,155,69,0.22),
-                0 0 72px 24px rgba(196,155,69,0.10);
-            margin-bottom: 0.85rem;
-        ">
-            <div style="
-                border-radius: 50%;
-                overflow: hidden;
-                width: 96px;
-                height: 96px;
-                background: #0F0F11;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            ">
+    <div style="padding:1.6rem 1rem 1.1rem;border-bottom:1px solid #2D2D31;text-align:center;">
+        <div style="display:inline-block;border-radius:50%;padding:4px;
+            background:conic-gradient(#C49B45,#F5D07A,#C49B45,#7A5A10,#C49B45);
+            box-shadow:0 0 18px 6px rgba(196,155,69,0.55),0 0 42px 14px rgba(196,155,69,0.22),0 0 72px 24px rgba(196,155,69,0.10);
+            margin-bottom:0.85rem;">
+            <div style="border-radius:50%;overflow:hidden;width:96px;height:96px;
+                background:#0F0F11;display:flex;align-items:center;justify-content:center;">
                 {_logo_inner}
             </div>
         </div>
-
-        <!-- Wordmark -->
-        <div style="
-            font-size: 1.25rem;
-            font-weight: 800;
-            color: #C49B45;
-            letter-spacing: -0.02em;
-            line-height: 1.15;
-            margin-bottom: 0.3rem;
-            text-shadow: 0 0 14px rgba(196,155,69,0.45);
-        ">HarmonyLedger</div>
-
-        <!-- Tagline -->
-        <div style="
-            font-size: 0.68rem;
-            color: #A1A1AA;
-            line-height: 1.4;
-            margin-bottom: 0.75rem;
-        ">Creative Passport for Human-AI Songwriting</div>
-
-        <!-- Gold divider -->
-        <div style="
-            height: 1px;
-            background: linear-gradient(90deg, transparent, #C49B45 30%, #F5D07A 50%, #C49B45 70%, transparent);
-            opacity: 0.55;
-        "></div>
+        <div style="font-size:1.25rem;font-weight:800;color:#C49B45;letter-spacing:-0.02em;
+            line-height:1.15;margin-bottom:0.3rem;text-shadow:0 0 14px rgba(196,155,69,0.45);">HarmonyLedger</div>
+        <div style="font-size:0.68rem;color:#A1A1AA;line-height:1.4;margin-bottom:0.75rem;">Creative Passport for Human-AI Songwriting</div>
+        <div style="height:1px;background:linear-gradient(90deg,transparent,#C49B45 30%,#F5D07A 50%,#C49B45 70%,transparent);opacity:0.55;"></div>
     </div>
     """, unsafe_allow_html=True)
 
