@@ -86,7 +86,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.pdfgen import canvas as canvas_mod
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -102,6 +102,7 @@ from reportlab.platypus import (
     TableStyle,
     HRFlowable,
     KeepTogether,
+    Image,
 )
 from reportlab.graphics.shapes import Drawing, Circle, Wedge, Line, String, Rect
 
@@ -207,6 +208,18 @@ _WHITE      = colors.HexColor("#FFFFFF")
 _GREEN      = colors.HexColor("#12A454")   # human authorship
 _PURPLE     = colors.HexColor("#7C4DFF")   # AI authorship
 _GOLD       = colors.HexColor("#B8862B")   # seal / accent rule
+
+# Brand colours — match the app's own sidebar identity (app.py brand hero
+# block) instead of the generic navy used for in-document headings, so the
+# passport's cover band reads as "HarmonyLedger" rather than a generic blue
+# report header.
+_BRAND_BG   = colors.HexColor("#0F0F11")   # near-black, matches sidebar logo tile
+_BRAND_GOLD = colors.HexColor("#C49B45")   # gold wordmark colour used in-app
+
+# Real logo asset (assets/logo.png, one level above this file) — used on the
+# cover page instead of a generated placeholder glyph.
+_LOGO_PATH      = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
+_LOGO_AVAILABLE = os.path.isfile(_LOGO_PATH)
 
 # Section accent colours — match the app's own section colour-coding exactly.
 _SECTION_COLORS = {
@@ -407,7 +420,9 @@ class _NumberedCanvas(canvas_mod.Canvas):
         self.line(20 * mm, 14 * mm, w - 20 * mm, 14 * mm)
         self.setFont("Helvetica", 7.5)
         self.setFillColor(_SUBTLE)
-        self.drawString(20 * mm, 9 * mm, "HarmonyLedger · Creative Passport")
+        # "HarmonyLedger · Creative Passport" is intentionally not repeated
+        # here — it's already printed once, at the top of page 1, as the
+        # document's brand row. The footer only tracks page position.
         self.drawRightString(
             w - 20 * mm, 9 * mm, f"Page {self._pageNumber} of {total_pages}"
         )
@@ -704,32 +719,88 @@ def build_passport_pdf(project) -> bytes:
         textColor=colors.HexColor("#8FA4BA"),
         fontName="Helvetica", leading=12, spaceBefore=8,
     )
+    # Compact project-title style for the slim repeat header on page 2+.
+    repeat_title_style = ParagraphStyle(
+        "repeat_title", parent=styles["Normal"], fontSize=12, textColor=_WHITE,
+        fontName=uf_bold, leading=15,
+    )
+    # Cover-page brand row: the "HarmonyLedger" wordmark next to the real logo.
+    brand_word_style = ParagraphStyle(
+        "brand_word", parent=styles["Normal"], fontSize=12.5,
+        textColor=_BRAND_GOLD, fontName="Helvetica-Bold", leading=14,
+    )
+    # "CREATIVE PASSPORT" - printed once, top-right, top-aligned (not the old
+    # vertically-centred corner caption that read as floating mid-band).
+    brand_tag_style = ParagraphStyle(
+        "brand_tag", parent=styles["Normal"], fontSize=10.5,
+        textColor=_WHITE, fontName="Helvetica-Bold", leading=13,
+        alignment=TA_RIGHT,
+    )
 
-    # ── Helper: shared header band ────────────────────────────────────────────
-    def _build_header_band() -> Table:
-        meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
-        btc = [Paragraph(project_title, title_style)]
-        if ai_title and ai_title != project_title:
-            btc.append(Paragraph(f"\u201c{ai_title}\u201d", subtitle_style))
-        if meta_parts:
-            btc.append(HRFlowable(
-                width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
-                spaceBefore=7, spaceAfter=7, hAlign="LEFT",
-            ))
-            btc.append(Paragraph("  \u00b7  ".join(meta_parts), band_meta_style))
-        wmc = [Paragraph("HARMONYLEDGER  \u00b7  CREATIVE PASSPORT", watermark_style)]
-        b = Table(
-            [[btc, wmc]],
-            colWidths=[frame_w - 66 * mm, 66 * mm],
+    # -- Helper: cover-page brand row (logo + wordmark + "CREATIVE PASSPORT") --
+    # Printed exactly once, at the very top of page 1 - this is the single
+    # place "HarmonyLedger" / "Creative Passport" appear as a document title.
+    def _build_brand_row() -> Table:
+        if _LOGO_AVAILABLE:
+            logo_cell = Image(_LOGO_PATH, width=9 * mm, height=9 * mm)
+        else:
+            logo_cell = ""
+        wordmark = Table(
+            [[logo_cell, Paragraph("HarmonyLedger", brand_word_style)]],
+            colWidths=[11 * mm, 45 * mm],
         )
+        wordmark.setStyle(TableStyle([
+            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, 0), 3),
+        ]))
+        # The outer header band has 14pt LEFTPADDING + 14pt RIGHTPADDING, so
+        # this nested row only has (frame_w - 28) points of real estate —
+        # sizing it to the full frame_w overflows the padded cell and clips
+        # the right-hand text against the page edge.
+        band_inner_w = frame_w - 28
+        row = Table(
+            [[wordmark, Paragraph("CREATIVE PASSPORT", brand_tag_style)]],
+            colWidths=[56 * mm, band_inner_w - 56 * mm],
+        )
+        row.setStyle(TableStyle([
+            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        return row
+
+    # -- Helper: header band -------------------------------------------------
+    # is_cover=True  -> page 1: brand row + full project title/metadata block.
+    # is_cover=False -> page 2+: a slim repeat header with just the project
+    #                  title, so the "HarmonyLedger / Creative Passport"
+    #                  branding is never printed more than once in the document.
+    def _build_header_band(is_cover: bool) -> Table:
+        meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
+        btc = []
+        if is_cover:
+            btc.append(_build_brand_row())
+            btc.append(Spacer(1, 8))
+            btc.append(Paragraph(project_title, title_style))
+            if ai_title and ai_title != project_title:
+                btc.append(Paragraph(f"“{ai_title}”", subtitle_style))
+            if meta_parts:
+                btc.append(HRFlowable(
+                    width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
+                    spaceBefore=7, spaceAfter=7, hAlign="LEFT",
+                ))
+                btc.append(Paragraph("  ·  ".join(meta_parts), band_meta_style))
+        else:
+            btc.append(Paragraph(project_title, repeat_title_style))
+
+        b = Table([[btc]], colWidths=[frame_w])
         b.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), _NAVY),
-            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-            ("ALIGN",         (1, 0), (1, 0), "RIGHT"),
-            ("TOPPADDING",    (0, 0), (-1, -1), 16),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
-            ("LEFTPADDING",   (0, 0), (0, 0), 14),
-            ("RIGHTPADDING",  (1, 0), (1, 0), 12),
+            ("BACKGROUND",    (0, 0), (-1, -1), _BRAND_BG),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 14 if is_cover else 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 14 if is_cover else 8),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 14),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 14),
         ]))
         return b
 
@@ -737,7 +808,7 @@ def build_passport_pdf(project) -> bytes:
     # PAGE 1 — Summary / Cover
     # ═════════════════════════════════════════════════════════════════════════
 
-    story.append(_build_header_band())
+    story.append(_build_header_band(is_cover=True))
     story.append(Spacer(1, 7 * mm))
 
     # Product positioning sub-heading
@@ -773,12 +844,6 @@ def build_passport_pdf(project) -> bytes:
     sum_value_unicode = ParagraphStyle(
         "sum_value_unicode", parent=styles["Normal"],
         fontSize=11.5, textColor=_INK, leading=14, fontName=uf_bold,
-    )
-    sum_value_green = ParagraphStyle(
-        "sum_value_green", parent=sum_value_style, textColor=_GREEN,
-    )
-    sum_value_purple = ParagraphStyle(
-        "sum_value_purple", parent=sum_value_style, textColor=_PURPLE,
     )
 
     _grid_ts = TableStyle([
@@ -833,94 +898,23 @@ def build_passport_pdf(project) -> bytes:
             story.append(row_tbl)
             story.append(Spacer(1, 5 * mm))
 
-    # ── Contribution summary (donut + stat grid) ──────────────────────────────
+    # Note: the contribution donut / stat grid / disclaimer are deliberately
+    # NOT repeated here - they are shown exactly once, in "Contribution Split"
+    # on the detail page below. The cover page also skips the passport ID /
+    # methodology / record hash line that used to sit here - those aren't
+    # human-readable at a glance and are already printed together, in full,
+    # in the provenance stamp at the very end of the document. No need to
+    # say the same technical identifiers twice in two different places.
     story.append(HRFlowable(width="100%", thickness=0.5, color=_BORDER))
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph(
-        "Contribution Summary",
-        ParagraphStyle("cs_h", parent=styles["Normal"],
-                       fontSize=9, textColor=_NAVY,
-                       fontName="Helvetica-Bold", leading=12, spaceAfter=4),
-    ))
 
-    sum_stat_rows = [
-        [Paragraph("HUMAN AUTHORSHIP", sum_label_style),
-         Paragraph(f"{human_pct:g}%", sum_value_green)],
-        [Paragraph("AI AUTHORSHIP", sum_label_style),
-         Paragraph(f"{ai_pct:g}%", sum_value_purple)],
-        [Paragraph("DIRECTION SCORE", sum_label_style),
-         Paragraph(f"{dir_score:g}%", sum_value_style)],
-        [Paragraph("METHODOLOGY", sum_label_style),
-         Paragraph(f"v{meth_version}", sum_value_style)],
-    ]
-    sum_stat_tbl = Table(sum_stat_rows, colWidths=[55 * mm, 65 * mm])
-    sum_stat_tbl.setStyle(TableStyle([
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING",   (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-    ]))
-    sum_donut = _contribution_donut(human_pct, ai_pct, size_mm=40)
-    sum_contrib_row = Table(
-        [[sum_donut, sum_stat_tbl]],
-        colWidths=[50 * mm, frame_w - 50 * mm],
-    )
-    sum_contrib_row.setStyle(TableStyle([
-        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story.append(sum_contrib_row)
-    story.append(Spacer(1, 5 * mm))
-
-    # ── Non-legal disclaimer box ──────────────────────────────────────────────
-    disclaimer_box = Table(
-        [[Paragraph(
-            CONTRIBUTION_DISCLAIMER,
-            ParagraphStyle("disc_sum", parent=styles["Normal"],
-                           fontSize=8, textColor=_INK, leading=12,
-                           fontName="Helvetica-Oblique"),
-        )]],
-        colWidths=[frame_w],
-    )
-    disclaimer_box.setStyle(TableStyle([
-        ("BOX",          (0, 0), (-1, -1), 0.75, _GOLD),
-        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#FDFBF5")),
-        ("TOPPADDING",   (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 7),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-    ]))
-    story.append(disclaimer_box)
-
-    # Integrity line — only shown after at least one export
-    if passport.get("exported_at"):
-        story.append(Spacer(1, 4 * mm))
-        integrity_parts = [
-            "<b>Integrity:</b> source is project.json (append-only timeline)",
-            f"Passport ID: {watermark_id}",
-            f"Methodology v{meth_version}",
-        ]
-        if record_hash:
-            integrity_parts.append(
-                f"Record hash (SHA-256): {record_hash[:16]}\u2026{record_hash[-8:]}"
-            )
-        story.append(Paragraph(
-            "  \u00b7  ".join(integrity_parts),
-            ParagraphStyle("integrity", parent=styles["Normal"],
-                           fontSize=7.5, textColor=_SUBTLE, leading=11,
-                           fontName="Helvetica"),
-        ))
-
-    # Page break — detail pages follow
+    # Page break - detail pages follow
     story.append(PageBreak())
 
     # ═════════════════════════════════════════════════════════════════════════
     # PAGE 2+ — Detail: contribution split, sections, timeline, statement
     # ═════════════════════════════════════════════════════════════════════════
 
-    story.append(_build_header_band())
+    story.append(_build_header_band(is_cover=False))
     story.append(Spacer(1, 6 * mm))
 
     # ── Contribution Split ────────────────────────────────────────────────────
@@ -1087,13 +1081,18 @@ def build_passport_pdf(project) -> bytes:
     # Unicode font so all scripts render correctly.
     quote_style = ParagraphStyle(
         "quote", parent=body, textColor=_INK, leftIndent=10, leading=15,
-        fontName=uf_regular,
+        fontName=uf_regular, spaceAfter=7,
     )
-    quote_cell = Table(
-        [[Paragraph("Transparency Statement", h2)],
-         [Paragraph(statement_text, quote_style)]],
-        colWidths=[frame_w - 8],
-    )
+    # Split on blank lines into real paragraphs — each one flowed as its own
+    # Paragraph — instead of one dense block. A single Paragraph collapses
+    # "\n\n" like any other whitespace, which is what made this read as an
+    # unbroken wall of text regardless of how the source string was written.
+    statement_paragraphs = [
+        p.strip() for p in statement_text.split("\n\n") if p.strip()
+    ] or [statement_text]
+    quote_rows = [[Paragraph("Transparency Statement", h2)]]
+    quote_rows += [[Paragraph(p, quote_style)] for p in statement_paragraphs]
+    quote_cell = Table(quote_rows, colWidths=[frame_w - 8])
     quote_cell.setStyle(TableStyle([
         ("LEFTPADDING",  (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -1101,9 +1100,12 @@ def build_passport_pdf(project) -> bytes:
         ("BOTTOMPADDING",(0, -1), (0, -1), 8),
         ("LINEBEFORE",   (0, 0), (0, -1), 2.4, _GOLD),
     ]))
-    # KeepTogether on the full quote block would push a long custom statement
-    # onto a new page, leaving a blank gap. Append it as a plain flowable so
-    # ReportLab can paginate within it if necessary.
+    # Always start the Transparency Statement on a fresh page. Without this,
+    # ReportLab was free to split the block wherever it liked mid-flow — the
+    # heading alone would land at the bottom of the timeline page with the
+    # actual statement text stranded on the next page, which read as broken
+    # pagination rather than a document section boundary.
+    story.append(PageBreak())
     story.append(quote_cell)
 
     if authorship_line:
