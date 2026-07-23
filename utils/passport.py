@@ -16,6 +16,41 @@ for anything that must stay legible), and vector-drawn shapes instead of
 emoji glyphs, since the base-14 PDF fonts used here don't have emoji glyphs
 and silently render them as an invisible/blank box.
 
+Unicode font support
+────────────────────
+All user-generated text (song title, project name, lyrics, timeline
+descriptions, transparency statement, metadata) is rendered using the
+appropriate Unicode-capable font for the project language so that non-Latin
+scripts (Devanagari, Telugu, Tamil, CJK) display as readable characters
+rather than black boxes.
+
+Font strategy:
+  • Latin scripts (English, Spanish, French):
+      NotoSans TTF — bundled in assets/fonts/
+  • Devanagari (Hindi, Marathi):
+      NotoSansDevanagari TTF — bundled in assets/fonts/
+  • Telugu, Tamil:
+      NotoSansTelugu / NotoSansTamil TTF — bundled in assets/fonts/
+  • Japanese (CJK):
+      HeiseiKakuGo-W5 — a UnicodeCIDFont built into ReportLab, no TTF
+      required, and not affected by the ReportLab TTF subsetting bug that
+      causes "unpack requires a buffer of 2 bytes" for large CJK fonts.
+
+  Language       Font family used
+  ─────────────────────────────────────────────
+  English        NotoSans (bundled TTF)
+  Spanish        NotoSans (bundled TTF)
+  French         NotoSans (bundled TTF)
+  Hindi          NotoSansDevanagari (bundled TTF)
+  Marathi        NotoSansDevanagari (bundled TTF)
+  Telugu         NotoSansTelugu (bundled TTF)
+  Tamil          NotoSansTamil (bundled TTF)
+  Japanese       HeiseiKakuGo-W5 (ReportLab built-in CIDFont)
+
+Pure chrome / system text (field labels, page numbers, footer rule) continues
+to use the built-in Helvetica family, which is always available in ReportLab
+without a font file and is never used for user-entered content.
+
 The caller (views/view_project.py) is responsible for:
   - Offering the bytes via st.download_button
   - Stamping project.passport with exported_at / watermark_id
@@ -26,6 +61,7 @@ build_passport_pdf() is pure: no side effects, no Streamlit imports.
 """
 
 import io
+import os
 from datetime import datetime
 
 from reportlab.lib import colors
@@ -34,6 +70,9 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_CENTER
 from reportlab.pdfgen import canvas as canvas_mod
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
     BaseDocTemplate,
     PageTemplate,
@@ -47,6 +86,96 @@ from reportlab.platypus import (
     KeepTogether,
 )
 from reportlab.graphics.shapes import Drawing, Circle, Wedge, Line, String, Rect
+
+
+# ── Unicode font registration ─────────────────────────────────────────────────
+# Fonts live in assets/fonts/ relative to the project root (one level above
+# this file). The path is resolved at import time so it is independent of the
+# working directory when the app is started.
+
+_FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "fonts")
+
+# Mapping: (internal_alias, filename)
+# TTF files bundled in the repository; no system fonts required.
+# Note: Japanese uses HeiseiKakuGo-W5 (ReportLab built-in CIDFont) instead of
+# a TTF because large CJK TrueType fonts trigger a ReportLab glyph-subsetting
+# bug ("unpack requires a buffer of 2 bytes") during PDF serialisation.
+_FONT_FILES = [
+    ("NotoSans",                  "NotoSans-Regular.ttf"),
+    ("NotoSans-Bold",             "NotoSans-Bold.ttf"),
+    ("NotoSansDevanagari",        "NotoSansDevanagari-Regular.ttf"),
+    ("NotoSansDevanagari-Bold",   "NotoSansDevanagari-Bold.ttf"),
+    ("NotoSansTamil",             "NotoSansTamil-Regular.ttf"),
+    ("NotoSansTamil-Bold",        "NotoSansTamil-Bold.ttf"),
+    ("NotoSansTelugu",            "NotoSansTelugu-Regular.ttf"),
+    ("NotoSansTelugu-Bold",       "NotoSansTelugu-Bold.ttf"),
+]
+
+# Track which TTF aliases were successfully registered (so _font() can fall
+# back gracefully if a file is somehow missing in an unusual deployment).
+_REGISTERED_FONTS: set[str] = set()
+
+for _alias, _filename in _FONT_FILES:
+    _path = os.path.join(_FONTS_DIR, _filename)
+    if os.path.isfile(_path):
+        try:
+            pdfmetrics.registerFont(TTFont(_alias, _path))
+            _REGISTERED_FONTS.add(_alias)
+        except Exception:
+            pass  # Fall back to NotoSans or Helvetica at render time
+
+# Register Japanese CID font — built into ReportLab, no font file needed.
+# HeiseiKakuGo-W5 is the standard sans-serif Japanese CIDFont shipped with
+# every ReportLab install. Using UnicodeCIDFont avoids TTF glyph-subsetting.
+_JP_FONT      = "HeiseiKakuGo-W5"
+_JP_FONT_BOLD = "HeiseiKakuGo-W5"   # CIDFont has no separate bold variant
+try:
+    pdfmetrics.registerFont(UnicodeCIDFont(_JP_FONT))
+    _REGISTERED_FONTS.add(_JP_FONT)
+except Exception:
+    pass  # Unusually stripped ReportLab install — will fall back to NotoSans
+
+# ── Language → font family mapping ───────────────────────────────────────────
+
+_LANG_FONT_BASE: dict[str, str] = {
+    # Latin-script languages — Noto Sans covers full Latin + extended Unicode
+    "English": "NotoSans",
+    "Spanish": "NotoSans",
+    "French":  "NotoSans",
+    # Devanagari script
+    "Hindi":   "NotoSansDevanagari",
+    "Marathi": "NotoSansDevanagari",
+    # South Indian scripts
+    "Telugu":  "NotoSansTelugu",
+    "Tamil":   "NotoSansTamil",
+    # CJK — use built-in CIDFont (no subsetting, no TTF file dependency)
+    "Japanese": _JP_FONT,
+}
+
+_FALLBACK_FONT      = "NotoSans"       # always registered (file always present)
+_FALLBACK_BOLD_FONT = "NotoSans-Bold"
+
+
+def _font(language: str, bold: bool = False) -> str:
+    """Return the registered ReportLab font name for *language*.
+
+    If the ideal font wasn't successfully registered (e.g. file missing on an
+    unusual deployment), falls back to NotoSans which covers Latin + extended
+    Unicode, or ultimately to Helvetica so the PDF always builds.
+    """
+    base = _LANG_FONT_BASE.get(language, _FALLBACK_FONT)
+    name = f"{base}-Bold" if bold else base
+    if name in _REGISTERED_FONTS:
+        return name
+    # Bold variant missing → try regular
+    if bold and base in _REGISTERED_FONTS:
+        return base
+    # Desired font missing entirely → NotoSans fallback
+    fb = _FALLBACK_BOLD_FONT if bold else _FALLBACK_FONT
+    if fb in _REGISTERED_FONTS:
+        return fb
+    # Last resort — always present in ReportLab
+    return "Helvetica-Bold" if bold else "Helvetica"
 
 
 # ── Palette — a light "certificate" theme, tuned for a white printed page ────
@@ -285,6 +414,12 @@ def build_passport_pdf(project) -> bytes:
         and human-approved transparency statement — identical to the previous
         single-page layout, preserved for completeness and auditability.
 
+    All user-generated text (title, project name, lyrics, timeline
+    descriptions, transparency statement) is rendered using the Unicode-capable
+    Noto Sans font family appropriate for the project's language, so that
+    non-Latin scripts (Devanagari for Hindi/Marathi, Telugu, Tamil, CJK for
+    Japanese) are displayed as readable characters rather than black boxes.
+
     Args:
         project: A Project instance (utils.models.Project).
 
@@ -308,54 +443,12 @@ def build_passport_pdf(project) -> bytes:
     styles = getSampleStyleSheet()
     story  = []
 
-    # ── Shared paragraph styles ───────────────────────────────────────────────
-    h2 = ParagraphStyle(
-        "h2", parent=styles["Heading2"],
-        fontSize=12.5, textColor=_NAVY, spaceBefore=12, spaceAfter=5,
-        fontName="Helvetica-Bold",
-    )
-    body = ParagraphStyle(
-        "body", parent=styles["Normal"],
-        fontSize=9.3, textColor=_INK, leading=15,
-    )
-    muted = ParagraphStyle(
-        "muted", parent=styles["Normal"],
-        fontSize=8, textColor=_SUBTLE, leading=12,
-    )
-    stat_label = ParagraphStyle(
-        "stat_label", parent=styles["Normal"],
-        fontSize=8, textColor=_SUBTLE, leading=11,
-    )
-    stat_value = ParagraphStyle(
-        "stat_value", parent=styles["Normal"],
-        fontSize=10, textColor=_INK, leading=13, fontName="Helvetica-Bold",
-    )
-    watermark_style = ParagraphStyle(
-        "watermark", parent=styles["Normal"], fontSize=7,
-        textColor=colors.HexColor("#8DA0BA"),
-        fontName="Helvetica", leading=10, alignment=2,  # TA_RIGHT
-    )
-    title_style = ParagraphStyle(
-        "title", parent=styles["Normal"], fontSize=21, textColor=_WHITE,
-        fontName="Helvetica-Bold", leading=24, spaceBefore=0,
-    )
-    subtitle_style = ParagraphStyle(
-        "subtitle", parent=styles["Normal"], fontSize=9.5,
-        textColor=colors.HexColor("#C8D4E3"),
-        fontName="Helvetica-Oblique", leading=13, spaceBefore=5,
-    )
-    band_meta_style = ParagraphStyle(
-        "band_meta", parent=styles["Normal"], fontSize=8.5,
-        textColor=colors.HexColor("#8FA4BA"),
-        leading=12, spaceBefore=8,
-    )
-
     # ── Collect all project data up-front ────────────────────────────────────
     # Using existing project data model fields; no new fields are introduced.
     song          = project.song or {}
     ai_title      = song.get("title", "")       # creative title from Gemini
     project_title = project.name                # user's own project name
-    language      = getattr(project, "language", "") or ""
+    language      = getattr(project, "language", "") or "English"
     genre         = song.get("genre", "")
     style         = song.get("style", "")
     mood          = song.get("mood", "")
@@ -399,6 +492,62 @@ def build_passport_pdf(project) -> bytes:
 
     frame_w = A4[0] - 40 * mm  # 170 mm usable width
 
+    # ── Unicode-aware font names for this project's language ─────────────────
+    # These are used for all user-generated text throughout the document.
+    uf_regular  = _font(language, bold=False)   # user-content regular weight
+    uf_bold     = _font(language, bold=True)    # user-content bold weight
+
+    # ── Shared paragraph styles ───────────────────────────────────────────────
+    # NOTE: h2, body, muted, stat_label, stat_value are used for chrome/system
+    # labels that are always ASCII — they keep Helvetica.  The styles that
+    # render user-generated text (title_style, subtitle_style, band_meta_style,
+    # quote_style, timeline description cells) use uf_regular / uf_bold so the
+    # correct Unicode font is selected per language.
+    h2 = ParagraphStyle(
+        "h2", parent=styles["Heading2"],
+        fontSize=12.5, textColor=_NAVY, spaceBefore=12, spaceAfter=5,
+        fontName="Helvetica-Bold",
+    )
+    body = ParagraphStyle(
+        "body", parent=styles["Normal"],
+        fontSize=9.3, textColor=_INK, leading=15,
+        fontName=uf_regular,
+    )
+    muted = ParagraphStyle(
+        "muted", parent=styles["Normal"],
+        fontSize=8, textColor=_SUBTLE, leading=12,
+        fontName="Helvetica",
+    )
+    stat_label = ParagraphStyle(
+        "stat_label", parent=styles["Normal"],
+        fontSize=8, textColor=_SUBTLE, leading=11,
+        fontName="Helvetica",
+    )
+    stat_value = ParagraphStyle(
+        "stat_value", parent=styles["Normal"],
+        fontSize=10, textColor=_INK, leading=13, fontName="Helvetica-Bold",
+    )
+    watermark_style = ParagraphStyle(
+        "watermark", parent=styles["Normal"], fontSize=7,
+        textColor=colors.HexColor("#8DA0BA"),
+        fontName="Helvetica", leading=10, alignment=2,  # TA_RIGHT
+    )
+    # Title and subtitle in the header band: user-generated, must use Unicode font
+    title_style = ParagraphStyle(
+        "title", parent=styles["Normal"], fontSize=21, textColor=_WHITE,
+        fontName=uf_bold, leading=24, spaceBefore=0,
+    )
+    subtitle_style = ParagraphStyle(
+        "subtitle", parent=styles["Normal"], fontSize=9.5,
+        textColor=colors.HexColor("#C8D4E3"),
+        fontName=uf_regular, leading=13, spaceBefore=5,
+    )
+    band_meta_style = ParagraphStyle(
+        "band_meta", parent=styles["Normal"], fontSize=8.5,
+        textColor=colors.HexColor("#8FA4BA"),
+        fontName="Helvetica", leading=12, spaceBefore=8,
+    )
+
     # ── Helper: shared header band ────────────────────────────────────────────
     def _build_header_band() -> Table:
         meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
@@ -440,6 +589,7 @@ def build_passport_pdf(project) -> bytes:
         ParagraphStyle(
             "positioning", parent=styles["Normal"],
             fontSize=9, textColor=_SUBTLE, leading=14,
+            fontName="Helvetica",
         ),
     ))
     story.append(Spacer(1, 4 * mm))
@@ -449,13 +599,23 @@ def build_passport_pdf(project) -> bytes:
     # ── Summary stat grid ─────────────────────────────────────────────────────
     # Each cell is a two-row unit: small muted label above large bold value.
     # Only cells with real data are included — no invented placeholders.
+    # NOTE: stat labels (SONG TITLE, LANGUAGE …) are always ASCII → Helvetica.
+    #       stat values for user-generated fields (song title, project name)
+    #       use the Unicode font so the actual text renders correctly.
     sum_label_style = ParagraphStyle(
         "sum_label", parent=styles["Normal"],
         fontSize=7.5, textColor=_SUBTLE, leading=10,
+        fontName="Helvetica",
     )
+    # Generic value style for non-user-text fields (dates, numbers, status)
     sum_value_style = ParagraphStyle(
         "sum_value", parent=styles["Normal"],
         fontSize=11.5, textColor=_INK, leading=14, fontName="Helvetica-Bold",
+    )
+    # Value style for fields that contain user-generated text (title, etc.)
+    sum_value_unicode = ParagraphStyle(
+        "sum_value_unicode", parent=styles["Normal"],
+        fontSize=11.5, textColor=_INK, leading=14, fontName=uf_bold,
     )
     sum_value_green = ParagraphStyle(
         "sum_value_green", parent=sum_value_style, textColor=_GREEN,
@@ -480,9 +640,10 @@ def build_passport_pdf(project) -> bytes:
         return [frame_w / n] * n
 
     # Row 1: song metadata
+    # Song title is user-generated → use Unicode value style
     row1 = []
     if ai_title:
-        row1.append(_stat_cell("SONG TITLE", ai_title))
+        row1.append(_stat_cell("SONG TITLE", ai_title, sum_value_unicode))
     if language:
         row1.append(_stat_cell("LANGUAGE", language))
     if genre:
@@ -490,7 +651,7 @@ def build_passport_pdf(project) -> bytes:
     if model_used:
         row1.append(_stat_cell("AI MODEL", model_used))
 
-    # Row 2: project provenance metadata
+    # Row 2: project provenance metadata (all ASCII / system values)
     row2 = []
     row2.append(_stat_cell("EXPORTED", exported_at))
     row2.append(_stat_cell("PROJECT STATUS", getattr(project, "status", "") or "—"))
@@ -499,7 +660,7 @@ def build_passport_pdf(project) -> bytes:
     if created_at_fmt:
         row2.append(_stat_cell("CREATED", created_at_fmt))
 
-    # Row 3: creative action counts
+    # Row 3: creative action counts (all numeric)
     row3 = []
     if num_sections:
         row3.append(_stat_cell("SONG SECTIONS", str(num_sections)))
@@ -584,7 +745,8 @@ def build_passport_pdf(project) -> bytes:
             f"\u00b7  Passport ID: {watermark_id}  "
             f"\u00b7  Methodology v{meth_version}",
             ParagraphStyle("integrity", parent=styles["Normal"],
-                           fontSize=7.5, textColor=_SUBTLE, leading=11),
+                           fontSize=7.5, textColor=_SUBTLE, leading=11,
+                           fontName="Helvetica"),
         ))
 
     # Page break — detail pages follow
@@ -721,6 +883,8 @@ def build_passport_pdf(project) -> bytes:
             ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
             ("FONTSIZE",     (0, 0), (-1, 0), 8.5),
             ("TEXTCOLOR",    (0, 1), (-1, -1), _INK),
+            # Description column uses Unicode font for user-generated text
+            ("FONTNAME",     (3, 1), (3, -1), uf_regular),
             ("FONTSIZE",     (0, 1), (-1, -1), 8),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_WHITE, _ROW_ALT]),
             ("GRID",         (0, 0), (-1, -1), 0.5, _BORDER),
@@ -755,8 +919,11 @@ def build_passport_pdf(project) -> bytes:
     authorship_line  = passport.get("authorship_line", "").strip()
     statement_text   = custom_statement or _DEFAULT_TRANSPARENCY.format(version=meth_version)
 
+    # The transparency statement may be user-written in any language; use the
+    # Unicode font so all scripts render correctly.
     quote_style = ParagraphStyle(
         "quote", parent=body, textColor=_INK, leftIndent=10, leading=15,
+        fontName=uf_regular,
     )
     quote_cell = Table(
         [[Paragraph("Transparency Statement", h2)],
@@ -779,7 +946,7 @@ def build_passport_pdf(project) -> bytes:
         story.append(Spacer(1, 3 * mm))
         story.append(Paragraph(authorship_line, ParagraphStyle(
             "auth", parent=styles["Normal"],
-            fontSize=10, textColor=_NAVY, leading=13, fontName="Helvetica-Bold",
+            fontSize=10, textColor=_NAVY, leading=13, fontName=uf_bold,
         )))
 
     # ── Provenance stamp ──────────────────────────────────────────────────────
@@ -790,7 +957,7 @@ def build_passport_pdf(project) -> bytes:
             f"<b>Watermark</b>  {watermark_id}<br/>"
             f"<b>Exported</b>  {exported_at}  \u00b7  Project revision {project.version}",
             ParagraphStyle("stamp", parent=muted, leading=12, fontSize=7.5,
-                            textColor=_SUBTLE),
+                            textColor=_SUBTLE, fontName="Helvetica"),
         )]],
         colWidths=[frame_w],
     )

@@ -159,7 +159,12 @@ All views read from the same project JSON, so they can never disagree with each 
 | App / UI | Streamlit (Python) |
 | AI — song generation | Google Gemini API (`gemini-flash-latest`) |
 | Text-to-Speech | gTTS (Google Text-to-Speech) |
-| PDF export | ReportLab |
+| PDF export | ReportLab + Unicode Noto Sans fonts (bundled in `assets/fonts/`) |
+| Unicode font — Latin (English, Spanish, French) | Noto Sans TTF (bundled) |
+| Unicode font — Devanagari (Hindi, Marathi) | Noto Sans Devanagari TTF (bundled) |
+| Unicode font — Telugu | Noto Sans Telugu TTF (bundled) |
+| Unicode font — Tamil | Noto Sans Tamil TTF (bundled) |
+| Unicode font — Japanese | HeiseiKakuGo-W5 (ReportLab built-in CIDFont) |
 | Storage | Single JSON file per project (atomic writes via `os.replace`) |
 | AI — coding assistant used to build this project | IBM Bob (Plan / Ask / Agent modes) |
 | API key management | python-dotenv |
@@ -180,6 +185,26 @@ git clone https://github.com/your-org/harmonyledger.git
 cd harmonyledger
 pip install -r requirements.txt
 ```
+
+### Unicode Font Setup
+
+The Creative Passport PDF uses bundled Noto Sans font files for Unicode support. These files are included in the repository under `assets/fonts/` and require no separate download or system installation. The full set of bundled fonts:
+
+| File | Script / Languages |
+|---|---|
+| `NotoSans-Regular.ttf` / `NotoSans-Bold.ttf` | Latin — English, Spanish, French |
+| `NotoSansDevanagari-Regular.ttf` / `NotoSansDevanagari-Bold.ttf` | Devanagari — Hindi, Marathi |
+| `NotoSansTelugu-Regular.ttf` / `NotoSansTelugu-Bold.ttf` | Telugu |
+| `NotoSansTamil-Regular.ttf` / `NotoSansTamil-Bold.ttf` | Tamil |
+| *(HeiseiKakuGo-W5 — ReportLab built-in)* | Japanese (CJK — no font file needed) |
+
+If you are deploying HarmonyLedger in an environment where the `assets/fonts/` directory is stripped, re-run the font download script:
+
+```bash
+python scripts/download_fonts.py
+```
+
+Or download each TTF from [Google Fonts](https://fonts.google.com/noto) and place them in `assets/fonts/`.
 
 ### Configuration
 
