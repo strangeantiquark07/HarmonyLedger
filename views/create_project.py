@@ -61,92 +61,87 @@ def render() -> None:
     # RIGHT COLUMN — preset + modifier panel
     # ═════════════════════════════════════════════════
     with right_col:
-        st.markdown(
-            "<div style='background:#141417;border:1px solid #2D2D31;"
-            "border-radius:10px;padding:1.1rem 1rem 0.9rem;'>",
-            unsafe_allow_html=True,
-        )
+        preset_card = st.container(border=True)
+        with preset_card:
 
-        # ── Genre presets ─────────────────────────────
-        _label("🎯 Genre Presets")
-        st.markdown(
-            "<p style='font-size:0.78rem;color:#71717A;margin:-0.2rem 0 0.7rem;'>"
-            "One click fills the vibe field. Edit freely after.</p>",
-            unsafe_allow_html=True,
-        )
-
-        preset_keys = list(GENRE_PRESETS.keys())
-        for i in range(0, len(preset_keys), 2):
-            c1, c2 = st.columns(2, gap="small")
-            for col, key in zip([c1, c2], preset_keys[i: i + 2]):
-                with col:
-                    is_sel = st.session_state.cp_preset_genre == GENRE_PRESETS[key]["genre"]
-                    if st.button(
-                        key,
-                        key=f"preset_{key}",
-                        use_container_width=True,
-                        type="primary" if is_sel else "secondary",
-                    ):
-                        st.session_state.cp_vibe_text    = GENRE_PRESETS[key]["vibe"]
-                        st.session_state.cp_preset_genre = GENRE_PRESETS[key]["genre"]
-                        # Preset replaces the vibe text, so any applied
-                        # modifier textures are gone — clear their toggles too.
-                        st.session_state.cp_applied_mods = []
-                        st.rerun()
-
-        # Active preset badge
-        if st.session_state.cp_preset_genre:
+            # ── Genre presets ─────────────────────────────
+            _label("🎯 Genre Presets")
             st.markdown(
-                f"<div style='margin-top:0.55rem;display:inline-flex;align-items:center;"
-                f"gap:0.3rem;background:#1DB95418;border:1px solid #1DB95440;"
-                f"border-radius:999px;padding:0.18rem 0.65rem;"
-                f"font-size:0.72rem;color:#1DB954;font-weight:600;'>"
-                f"✓ {st.session_state.cp_preset_genre}</div>",
+                "<p style='font-size:0.78rem;color:#71717A;margin:-0.2rem 0 0.7rem;'>"
+                "One click fills the vibe field. Edit freely after.</p>",
                 unsafe_allow_html=True,
             )
 
-        # ── Vibe modifiers ────────────────────────────
-        st.markdown(
-            "<hr style='margin:0.75rem 0 0.6rem;border-color:#2D2D31;'>",
-            unsafe_allow_html=True,
-        )
-        _label("✦ Vibe Modifiers")
-        st.markdown(
-            "<p style='font-size:0.78rem;color:#71717A;margin:-0.2rem 0 0.6rem;'>"
-            "Appends a texture to your vibe — doesn't replace it.</p>",
-            unsafe_allow_html=True,
-        )
+            preset_keys = list(GENRE_PRESETS.keys())
+            for i in range(0, len(preset_keys), 2):
+                c1, c2 = st.columns(2, gap="small")
+                for col, key in zip([c1, c2], preset_keys[i: i + 2]):
+                    with col:
+                        is_sel = st.session_state.cp_preset_genre == GENRE_PRESETS[key]["genre"]
+                        if st.button(
+                            key,
+                            key=f"preset_{key}",
+                            use_container_width=True,
+                            type="primary" if is_sel else "secondary",
+                        ):
+                            st.session_state.cp_vibe_text    = GENRE_PRESETS[key]["vibe"]
+                            st.session_state.cp_preset_genre = GENRE_PRESETS[key]["genre"]
+                            # Preset replaces the vibe text, so any applied
+                            # modifier textures are gone — clear their toggles too.
+                            st.session_state.cp_applied_mods = []
+                            st.rerun()
 
-        # 2-column modifier grid — applied modifiers show green (primary) and
-        # click again to remove their texture from the vibe (toggle).
-        mod_keys = VIBE_MODIFIERS
-        for i in range(0, len(mod_keys), 2):
-            mc1, mc2 = st.columns(2, gap="small")
-            for col, mod in zip([mc1, mc2], mod_keys[i: i + 2]):
-                with col:
-                    is_on = mod["label"] in st.session_state.cp_applied_mods
-                    if st.button(
-                        mod["label"],
-                        key=f"mod_{mod['label']}",
-                        type="primary" if is_on else "secondary",
-                        use_container_width=True,
-                    ):
-                        if is_on:
-                            st.session_state.cp_applied_mods.remove(mod["label"])
-                            st.session_state.cp_vibe_text = (
-                                st.session_state.cp_vibe_text
-                                .replace(mod["text"], "", 1)
-                                .replace("  ", " ").strip()
-                            )
-                        else:
-                            st.session_state.cp_applied_mods.append(mod["label"])
-                            cur = st.session_state.cp_vibe_text.rstrip()
-                            st.session_state.cp_vibe_text = (
-                                cur + (" " if cur else "") + mod["text"]
-                            )
-                        st.rerun()
+            # Active preset badge
+            if st.session_state.cp_preset_genre:
+                st.markdown(
+                    f"<div style='margin-top:0.55rem;display:inline-flex;align-items:center;"
+                    f"gap:0.3rem;background:#1DB95418;border:1px solid #1DB95440;"
+                    f"border-radius:999px;padding:0.18rem 0.65rem;"
+                    f"font-size:0.72rem;color:#1DB954;font-weight:600;'>"
+                    f"✓ {st.session_state.cp_preset_genre}</div>",
+                    unsafe_allow_html=True,
+                )
 
-        st.markdown("</div>", unsafe_allow_html=True)
+            # ── Vibe modifiers ────────────────────────────
+            st.markdown(
+                "<hr style='margin:0.75rem 0 0.6rem;border-color:#2D2D31;'>",
+                unsafe_allow_html=True,
+            )
+            _label("✦ Vibe Modifiers")
+            st.markdown(
+                "<p style='font-size:0.78rem;color:#71717A;margin:-0.2rem 0 0.6rem;'>"
+                "Appends a texture to your vibe — doesn't replace it.</p>",
+                unsafe_allow_html=True,
+            )
+
+            # 2-column modifier grid — applied modifiers show green (primary) and
+            # click again to remove their texture from the vibe (toggle).
+            mod_keys = VIBE_MODIFIERS
+            for i in range(0, len(mod_keys), 2):
+                mc1, mc2 = st.columns(2, gap="small")
+                for col, mod in zip([mc1, mc2], mod_keys[i: i + 2]):
+                    with col:
+                        is_on = mod["label"] in st.session_state.cp_applied_mods
+                        if st.button(
+                            mod["label"],
+                            key=f"mod_{mod['label']}",
+                            type="primary" if is_on else "secondary",
+                            use_container_width=True,
+                        ):
+                            if is_on:
+                                st.session_state.cp_applied_mods.remove(mod["label"])
+                                st.session_state.cp_vibe_text = (
+                                    st.session_state.cp_vibe_text
+                                    .replace(mod["text"], "", 1)
+                                    .replace("  ", " ").strip()
+                                )
+                            else:
+                                st.session_state.cp_applied_mods.append(mod["label"])
+                                cur = st.session_state.cp_vibe_text.rstrip()
+                                st.session_state.cp_vibe_text = (
+                                    cur + (" " if cur else "") + mod["text"]
+                                )
+                            st.rerun()
 
         # ── Tips card ─────────────────────────────────
         st.markdown(
