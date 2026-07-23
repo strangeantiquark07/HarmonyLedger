@@ -346,7 +346,6 @@ small, .stCaption, [data-testid="stCaptionContainer"] p {
 # Pull active project summary lazily (only reads the light list_projects cache)
 _active_name    = None
 _active_status  = None
-_active_version = None
 if st.session_state.active_project_id:
     try:
         from utils.storage import list_projects as _lp
@@ -491,7 +490,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     _phases    = ["Storage", "AI Engine", "Section Lock", "Passport", "Audio", "Launch"]
-    _completed = 5  # Phases 1-5 done (Storage, AI Engine, Section Lock, Passport, Audio)
+    _completed = 6  # All phases complete (Phases 1–6: Storage → AI Engine → Section Lock → Passport → Audio → Launch)
     for _i, _phase in enumerate(_phases):
         _done   = _i < _completed
         _cur    = _i == _completed
@@ -513,7 +512,7 @@ with st.sidebar:
     st.markdown("""
     <div style="margin-top:auto;padding:1.25rem 1.1rem 1rem;
                 border-top:1px solid #2D2D31;margin-top:1rem;">
-        <div style="font-size:0.68rem;color:#71717A;">Phase 5 · v0.5.0</div>
+        <div style="font-size:0.68rem;color:#71717A;">Phase 6 · v1.0.0</div>
         <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)
