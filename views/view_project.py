@@ -1337,9 +1337,50 @@ def render() -> None:
     )
 
     # ── Navigation ────────────────────────────────────────────────────────────
-    if st.button("← Project Library", key="vp_back"):
-        st.session_state.page = "Open Project"
-        st.rerun()
+    nav_left, nav_right = st.columns([70, 30])
+    with nav_left:
+        if st.button("← Project Library", key="vp_back"):
+            st.session_state.page = "Open Project"
+            st.rerun()
+    with nav_right:
+        # "Complete" is a creator judgment call, not something the app can
+        # infer — a manual action, same as every other authorship decision
+        # in this app (lock, accept, reject). Only offered once a song
+        # actually exists to judge; only reachable from "In Progress" so a
+        # fresh Draft can't be marked done before anything was written.
+        if project.status == "In Progress":
+            if st.button("✓ Mark as Complete", key="vp_mark_complete", use_container_width=True):
+                project.status = "Complete"
+                project.version += 1
+                append_event(
+                    project.timeline,
+                    event_type="project_completed",
+                    actor="Human",
+                    description="Project marked as complete.",
+                )
+                try:
+                    save_project(project, check_conflict=True)
+                except (OSError, ProjectConflictError) as exc:
+                    st.error(f"Could not save project: {exc}")
+                else:
+                    st.toast(f"'{project.name}' marked complete!", icon="🎉")
+                    st.rerun()
+        elif project.status == "Complete":
+            if st.button("↺ Reopen Project", key="vp_reopen", use_container_width=True):
+                project.status = "In Progress"
+                project.version += 1
+                append_event(
+                    project.timeline,
+                    event_type="project_reopened",
+                    actor="Human",
+                    description="Project reopened after being marked complete.",
+                )
+                try:
+                    save_project(project, check_conflict=True)
+                except (OSError, ProjectConflictError) as exc:
+                    st.error(f"Could not save project: {exc}")
+                else:
+                    st.rerun()
 
     st.markdown("<hr style='margin:0.75rem 0 1.1rem;border-color:#2D2D31;'>",
                 unsafe_allow_html=True)
