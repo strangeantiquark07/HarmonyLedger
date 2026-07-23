@@ -1,8 +1,22 @@
+import base64
+import pathlib
+
 import streamlit as st
 
 import views.create_project as create_project_page
 import views.open_project as open_project_page
 import views.view_project as view_project_page
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Logo asset — loaded once at startup and embedded as a base64 data URI so the
+# image renders correctly regardless of Streamlit's static-file server config.
+# The source file lives at assets/logo.png (committed to the repo).
+# ─────────────────────────────────────────────────────────────────────────────
+_LOGO_PATH = pathlib.Path(__file__).parent / "assets" / "logo.png"
+_LOGO_B64: str = (
+    "data:image/png;base64,"
+    + base64.b64encode(_LOGO_PATH.read_bytes()).decode()
+) if _LOGO_PATH.exists() else ""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page configuration  (must be the very first Streamlit call)
@@ -38,6 +52,11 @@ _DEFAULTS = {
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
+
+# ── Sidebar logo (official Streamlit branding API — places logo at the very
+#    top of the sidebar and in the collapsed-sidebar button icon).
+if _LOGO_PATH.exists():
+    st.logo(str(_LOGO_PATH), size="large")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS
@@ -348,14 +367,20 @@ if st.session_state.active_project_id:
 with st.sidebar:
 
     # ── Brand wordmark ────────────────────────────────
-    st.markdown("""
+    _logo_img_tag = (
+        f"<img src='{_LOGO_B64}' width='28' height='28' "
+        f"style='border-radius:50%;object-fit:cover;flex-shrink:0;' "
+        f"alt='HarmonyLedger logo' />"
+    ) if _LOGO_B64 else "<span style='font-size:1.3rem;line-height:1;'>🎵</span>"
+
+    st.markdown(f"""
     <div style="padding:1.25rem 1.1rem 0.85rem;border-bottom:1px solid #2D2D31;">
         <div style="display:flex;align-items:center;gap:0.55rem;margin-bottom:0.3rem;">
-            <span style="font-size:1.3rem;line-height:1;">🎵</span>
+            {_logo_img_tag}
             <span style="font-size:1.0rem;font-weight:700;color:#FAFAFA;
                          letter-spacing:-0.02em;line-height:1.2;">HarmonyLedger</span>
         </div>
-        <div style="font-size:0.7rem;color:#71717A;padding-left:1.85rem;
+        <div style="font-size:0.7rem;color:#71717A;padding-left:2.1rem;
                         line-height:1.3;">Creative Passport for Human-AI Songwriting</div>
     </div>
     """, unsafe_allow_html=True)
