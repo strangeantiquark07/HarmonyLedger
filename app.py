@@ -464,11 +464,18 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     for _label, _live in [
-        ("Section Locking",   True),
-        ("Targeted Regen",    True),
-        ("Contributions",     True),
-        ("Creative Passport", True),
-        ("Audio Preview",     True),
+        ("Multilingual Generation", True),
+        ("Genre Presets",           True),
+        ("Vibe Modifiers",          True),
+        ("Section Locking",         True),
+        ("Targeted Regeneration",   True),
+        ("Human Inline Editing",    True),
+        ("Accept / Reject Drafts",  True),
+        ("Creative Timeline",       True),
+        ("Contribution Accounting", True),
+        ("Creative Passport + Hash",True),
+        ("Audio Preview",           True),
+        ("Project Library",         True),
     ]:
         _fcol = "#1DB954" if _live else "#71717A"
         _mark = "✓" if _live else "·"
@@ -489,8 +496,15 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    _phases    = ["Storage", "AI Engine", "Section Lock", "Passport", "Audio", "Launch"]
-    _completed = 6  # All phases complete (Phases 1–6: Storage → AI Engine → Section Lock → Passport → Audio → Launch)
+    _phases    = [
+        "Storage & Schema",
+        "AI Song Generation",
+        "Lock / Regen / Edit",
+        "Passport & Contribution",
+        "Audio Preview",
+        "Multilingual & Presets",
+    ]
+    _completed = 6  # All phases complete
     for _i, _phase in enumerate(_phases):
         _done   = _i < _completed
         _cur    = _i == _completed
@@ -512,7 +526,7 @@ with st.sidebar:
     st.markdown("""
     <div style="margin-top:auto;padding:1.25rem 1.1rem 1rem;
                 border-top:1px solid #2D2D31;margin-top:1rem;">
-        <div style="font-size:0.68rem;color:#71717A;">Phase 6 · v1.0.0</div>
+        <div style="font-size:0.68rem;color:#71717A;">v1.0.0 · All phases complete</div>
         <div style="font-size:0.68rem;color:#71717A;">Powered by Google Gemini</div>
     </div>
     """, unsafe_allow_html=True)

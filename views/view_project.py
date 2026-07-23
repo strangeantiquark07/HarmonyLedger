@@ -1377,17 +1377,19 @@ def render() -> None:
 
         if not has_song:
             # ── Pre-generation state ──────────────────────────────────────────
+            lang_display = getattr(project, "language", "English") or "English"
             st.markdown(
-                "<div style='background:#18181B;border:1px solid #2D2D31;"
-                "border-left:3px solid #3B82F6;border-radius:9px;"
-                "padding:1.4rem 1.2rem;margin-bottom:1.2rem;'>"
-                "<div style='font-size:1rem;font-weight:700;color:#FAFAFA;"
-                "margin-bottom:0.4rem;'>Ready to generate</div>"
-                "<div style='font-size:0.875rem;color:#A1A1AA;line-height:1.6;'>"
-                "Google Gemini will compose a complete original song — title, lyrics for all five "
-                "sections, mood, tempo, key, and style — based on your vibe above. "
-                "Generation takes a few seconds."
-                "</div></div>",
+                f"<div style='background:#18181B;border:1px solid #2D2D31;"
+                f"border-left:3px solid #3B82F6;border-radius:9px;"
+                f"padding:1.4rem 1.2rem;margin-bottom:1.2rem;'>"
+                f"<div style='font-size:1rem;font-weight:700;color:#FAFAFA;"
+                f"margin-bottom:0.4rem;'>Ready to generate</div>"
+                f"<div style='font-size:0.875rem;color:#A1A1AA;line-height:1.6;'>"
+                f"Google Gemini will compose a complete original song in "
+                f"<strong style='color:#22D3EE;'>{_html.escape(lang_display)}</strong>"
+                f" — title, lyrics for all five sections, mood, tempo, key, and style — "
+                f"based on your vibe. Generation takes a few seconds."
+                f"</div></div>",
                 unsafe_allow_html=True,
             )
 

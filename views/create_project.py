@@ -157,8 +157,10 @@ def render() -> None:
             "letter-spacing:0.09em;color:#8B5CF6;margin-bottom:0.45rem;'>✦ AI Generation</div>"
             "<p style='font-size:0.825rem;color:#B0B0B8;margin:0;line-height:1.6;'>"
             "Your vibe will be sent to <strong style='color:#EAEAEE;'>Google Gemini</strong> "
-            "to generate a complete original song — verse, chorus, bridge, mood, tempo, and key. "
-            "Lock any section you love and regenerate only what you don't.</p>"
+            "to generate a complete original song in your selected language — "
+            "verse, chorus, bridge, outro, mood, tempo, and key. "
+            "Edit sections directly, lock what you love, and regenerate only what you don't. "
+            "Accept or reject each AI draft to steer the authorship record.</p>"
             "</div>",
             unsafe_allow_html=True,
         )
@@ -243,18 +245,21 @@ def render() -> None:
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>②</span>"
             "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
-            "Google Gemini turns your vibe into a full structured song — title, lyrics, mood, and tempo.</span></div>"
+            "Google Gemini writes a complete structured song in your chosen language — "
+            "title, lyrics for all five sections, mood, tempo, key, and style.</span></div>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>③</span>"
             "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
-            "Lock sections you love, regenerate the one you don't — you stay the author.</span></div>"
+            "Edit sections directly, lock what you love, regenerate what you don't, "
+            "and explicitly accept or reject each AI draft. Every action is logged.</span></div>"
 
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>④</span>"
             "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
-            "Export a Creative Passport that documents your creative contribution "
-            "and preserves an auditable history of human-AI collaboration.</span></div>"
+            "Review the live Contribution Dashboard and Creative Timeline, "
+            "preview any section as audio, then export a SHA-256 integrity-stamped "
+            "Creative Passport PDF with your full authorship record.</span></div>"
 
             "</div></div>",
             unsafe_allow_html=True,
