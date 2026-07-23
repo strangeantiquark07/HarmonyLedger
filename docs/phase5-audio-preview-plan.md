@@ -16,12 +16,14 @@
 
 **Future extensibility — ambient music overlay:** The audio engine is structured so a second audio path can be added later. The public function signature accepts an optional `ambient` parameter (defaulting to `None`) that the initial implementation ignores. When ambient support is added, it fills that parameter without changing the call site in `view_project.py`.
 
-**Non-goals:**
+**Non-goals (as originally scoped):**
 - No ambient music loop in Phase 5 (parameter reserved but unimplemented)
 - No persistent audio files on disk
-- No audio for any section other than the chorus
 - No audio settings screen or voice selection UI in Phase 5
 - No changes to `utils/models.py`, `utils/storage.py`, or the JSON schema
+
+**Superseded non-goal:** The original plan scoped audio preview to the chorus only. The final
+implementation extended this to allow any section via a radio selector — see Sub-Task 4 notes.
 
 ---
 
@@ -114,15 +116,21 @@ Register the new event type in the `_event_icon()` helper so it renders with a s
 ### Sub-Task 4 — Add Audio Preview UI to `views/view_project.py`
 
 **Intent:**
-Wire the audio engine into the view layer. The Preview Chorus button lives at the bottom of the left column, below the last section card, visible only when a song has been generated. The generated audio bytes are stored in session state (`"vp_audio_bytes"`) so the player persists across re-renders without re-calling gTTS.
+Wire the audio engine into the view layer. The Audio Preview card lives at the bottom of the left column, below the last section card, visible only when a song has been generated. The generated audio bytes are stored in session state (`"vp_audio_bytes"`) so the player persists across re-renders without re-calling gTTS.
 
-**Expected Outcomes:**
-- A "🔊 Preview Chorus" button appears below the section cards when a song has been generated
+**As-implemented (final):** The shipped implementation allows the user to preview **any**
+song section (not just the chorus) using a radio selector (`st.radio`). The selector defaults
+to Chorus when it is present in the song, otherwise the first available section. The `_available_audio_sections()` helper in `views/view_project.py` returns the ordered list of sections with non-empty lyrics.
+
+**Expected Outcomes (as implemented):**
+- A section-selector radio control and a `"🔊 Preview [Section]"` button appear below the section cards when a song has been generated
 - Clicking the button calls `generate_audio_preview()`, stores bytes in session state, and renders `st.audio()`
-- If the chorus lyrics are empty or missing, an informative `st.warning()` is shown and no gTTS call is made
-- If gTTS fails, `st.error()` is shown with the error detail; the audio state key is cleared
-- The `st.audio()` player persists across re-renders (bytes stored in session state, not regenerated on every run)
+- The stale-audio guard clears cached bytes when the project or selected section changes
+- If no sections have lyrics, an informative `st.warning()` is shown
+- If gTTS fails, `st.error()` is shown with the error detail
+- The `st.audio()` player persists across re-renders (bytes stored in session state)
 - A "✕ Clear Preview" button clears the audio from session state
+- A download button offers the audio as `{project_name}_{section_label}_preview.mp3`
 - A `"audio_preview_generated"` timeline event is logged on every successful generation; `save_project()` is called
 - The section card render loop is unchanged
 
@@ -131,6 +139,7 @@ Wire the audio engine into the view layer. The Preview Chorus button lives at th
 1. Add session-state keys to `app.py`'s `_DEFAULTS` dict:
    - `"vp_audio_bytes": None` — holds the raw MP3 bytes (or None)
    - `"vp_audio_project_id": None` — the project_id these bytes belong to (stale-audio guard)
+   - `"vp_audio_section": None` — the section_key these bytes were generated for (stale-audio guard)
 
 2. Add the import to `views/view_project.py`:
    ```python
@@ -138,16 +147,17 @@ Wire the audio engine into the view layer. The Preview Chorus button lives at th
    ```
 
 3. Add a helper function `_render_audio_preview(project)` in `views/view_project.py` (before `render()`):
-   - Stale-audio guard: if `st.session_state.vp_audio_project_id != project.project_id`, clear `vp_audio_bytes` and update the id key — prevents showing another project's audio after navigation
-   - Retrieve chorus lyrics: `project.song.get("sections", {}).get("chorus", {}).get("lyrics", "")`
-   - If chorus lyrics are empty: show `st.warning("No chorus lyrics available for preview.")` and an early return
+   - Call `_available_audio_sections(project.song)` to get the ordered list of previewable sections
+   - Stale-audio guard: if `vp_audio_project_id` or `vp_audio_section` in session state don't match, clear `vp_audio_bytes`
+   - Section radio selector defaulting to Chorus (or first available)
+   - Extract lyrics for the selected section
    - Render `_label("🔊 Audio Preview")`
-   - If `st.session_state.vp_audio_bytes` is not None: render `st.audio(st.session_state.vp_audio_bytes, format="audio/mp3")` and a "✕ Clear Preview" secondary button; do not re-generate
-   - If `st.session_state.vp_audio_bytes` is None: render the "🔊 Preview Chorus" button; when clicked:
-     - Wrap gTTS call in `with st.spinner("Generating audio preview…")`
-     - Call `generate_audio_preview(chorus_lyrics)`
+   - If `st.session_state.vp_audio_bytes` is not None: render `st.audio(...)` + download button + "✕ Clear Preview"
+   - If `st.session_state.vp_audio_bytes` is None: render the `"🔊 Preview {section_label}"` button; when clicked:
+     - Wrap gTTS call in `with st.spinner("Generating {section_label} audio preview…")`
+     - Call `generate_audio_preview(section_lyrics)`
      - On `AudioGenerationError`: `st.error(...)`, keep audio bytes as None
-     - On success: store bytes in `st.session_state.vp_audio_bytes`, log timeline event, increment `project.version`, call `save_project(project, check_conflict=True)`, call `st.rerun()`
+     - On success: store bytes in `st.session_state.vp_audio_bytes`, store section key, log timeline event, increment `project.version`, call `save_project(project, check_conflict=True)`, call `st.rerun()`
 
 4. In `render()`, call `_render_audio_preview(project)` at the bottom of the `with left:` block, after the section card loop, guarded by `if has_song`
 
@@ -236,17 +246,21 @@ Add a test file that validates the audio engine's contract without making any ne
 ## Data Flow Diagram
 
 ```
-User clicks "🔊 Preview Chorus"
+User selects a section in the radio control and clicks "🔊 Preview [Section]"
         │
         ▼
 views/view_project.py: _render_audio_preview(project)
         │
-        ├── Extract chorus_lyrics from project.song["sections"]["chorus"]["lyrics"]
+        ├── _available_audio_sections(project.song) → ordered list of previewable sections
         │
-        ├── [Empty lyrics?] → st.warning() → return
+        ├── st.radio selector (defaults to Chorus if present, else first available)
+        │
+        ├── Extract section_lyrics from project.song["sections"][selected_key]["lyrics"]
+        │
+        ├── [No sections with lyrics?] → st.warning() → return
         │
         ▼
-utils/audio_engine.generate_audio_preview(chorus_lyrics)
+utils/audio_engine.generate_audio_preview(section_lyrics)
         │
         ├── [Empty?] → raise AudioGenerationError
         │
@@ -279,12 +293,13 @@ Next render: st.audio(st.session_state["vp_audio_bytes"], format="audio/mp3")
 
 | Scenario | Detection Point | Handling |
 |---|---|---|
-| Chorus section missing from song | `_render_audio_preview()`, before button | `st.warning("No chorus lyrics available.")` — no button shown |
-| Chorus lyrics empty string | `generate_audio_preview()` guard | Raises `AudioGenerationError`; caller shows `st.error()` |
+| No sections with lyrics | `_render_audio_preview()`, before selector | `st.warning("No section lyrics available for audio preview.")` — controls not shown |
+| Selected section lyrics empty | `generate_audio_preview()` guard | Raises `AudioGenerationError`; caller shows `st.error()` |
 | gTTS network failure | Inside `generate_audio_preview()`, wrapped | Raises `AudioGenerationError`; caller shows `st.error()` |
 | gTTS import error (not installed) | On `import gTTS` at module level | Import error propagates; surface as `st.error()` in view |
 | `save_project()` fails after generation | In `_render_audio_preview()`, try/except | `st.warning("Audio generated but could not save event.")` — audio still plays |
-| User navigates away and back | Session-state stale-audio guard in `_render_audio_preview()` | If `vp_audio_project_id != project.project_id`, clear bytes silently |
+| User navigates away and back | Session-state stale-audio guard in `_render_audio_preview()` | If `vp_audio_project_id` or `vp_audio_section` differ, clear bytes silently |
+| User selects a different section | `vp_audio_section` guard in `_render_audio_preview()` | Clear cached bytes immediately; prompt re-generation |
 
 ---
 

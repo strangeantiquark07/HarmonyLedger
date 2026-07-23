@@ -4,3 +4,5 @@ __pycache__/
 projects/
 data/projects/
 .env
+
+test_output/

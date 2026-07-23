@@ -293,9 +293,9 @@ HarmonyLedger uses two distinct AI systems on two different layers — keeping t
 |---|---|
 | Planning (Plan Mode) | Designed the application architecture, stress-tested the JSON schema for extensibility, planned the AI integration workflow and prompt template, designed the regeneration and drift-check pipeline |
 | Development (Agent Mode) | Built the Google Gemini API integration and retry logic, the section lock/unlock system, the SHA-256 drift check, the JSON merge strategy, the inline human edit feature, the accept/reject pipeline, the unified timeline logger, the contribution dashboard, the Creative Passport PDF (ReportLab), the Unicode font support for all 8 languages, the audio preview engine (gTTS), the multilingual generation system, the canonical authorship record and SHA-256 integrity hash, the genre presets and vibe modifiers |
-| Testing & QA (Agent Mode) | Generated the 10-vibe Phase 2 integration harness, the Phase 3 lock/regeneration/drift test suite (57 tests across edge cases including Unicode, case-only drift, whitespace-only drift), the Phase 4 contribution and passport test suites, the Phase 5 audio engine test suite, the multilingual test suite, the 61-test passport integrity suite |
+| Testing & QA (Agent Mode) | Generated the 10-vibe Phase 2 integration harness, the Phase 3 lock/regeneration/drift test suite (57 tests across edge cases including Unicode, case-only drift, whitespace-only drift), the Phase 4 contribution and passport test suites, the Phase 5 audio engine test suite (164 total offline tests), the multilingual test suite, the 61-test passport integrity suite |
 | Documentation | Drafted this README, architecture notes, module docstrings, the phase planning documents in `docs/`, the AI transparency statement in the Creative Passport |
-| Phase 6 Audit (Ask + Agent Mode) | Reviewed the complete codebase, audited against judging criteria, identified and resolved the Unicode rendering bug, added the SHA-256 integrity marker, produced the Bob decision log |
+| Phase 6 Audit (Ask + Agent Mode) | Reviewed the complete codebase, audited against judging criteria, identified and resolved the Unicode rendering bug, added the SHA-256 integrity marker, produced the Bob decision log. Final release audit (D-15): corrected stale model names and SDK references in phase2 docs, updated phase5 audio docs to reflect any-section implementation, created `conftest.py` for pytest mark registration, added `test_output/` to `.gitignore`. |
 
 ### Three Bob Showcase Moments
 
@@ -318,9 +318,10 @@ The human column in this build is intentionally short — limited to genuine aut
 | Contribution formula (provenance weights, direction events) | Human |
 | `computed_at` excluded from the integrity hash | Human |
 | No IBM AI runtime call (would conflict with determinism thesis) | Human |
-| All architecture, code, tests, docstrings, prompts, PDF design | **IBM Bob** |
+| Final release audit scope and approval of all fixes | Human |
+| All architecture, code, tests, docstrings, prompts, PDF design, phase docs | **IBM Bob** |
 
-Phase planning documents and the full Bob decision log (14 entries covering every significant human–Bob interaction) are in [`docs/`](docs/).
+Phase planning documents and the full Bob decision log (15 entries covering every significant human–Bob interaction) are in [`docs/`](docs/).
 
 The parallel is intentional: HarmonyLedger documents a human staying the author while an AI co-writes the music. This project documents exactly the same thing with the code — Bob is the AI co-writer, the human directs it and owns the decisions.
 

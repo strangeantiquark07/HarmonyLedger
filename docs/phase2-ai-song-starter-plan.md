@@ -6,7 +6,7 @@
 a user's vibe into a complete, validated song JSON and surfaces it in the Streamlit UI.
 
 **Scope:** Two new utility modules (`ai_engine.py`, `gemini_client.py`), a versioned prompt
-template (`prompts/song_starter_v1.txt`), a new project detail page (`pages/view_project.py`),
+template (`prompts/song_starter_v1.txt`), a new project detail page (`views/view_project.py`),
 navigation wiring in `app.py` and `open_project.py`, updated requirements, and a 10-vibe
 test harness that proves the done bar.
 
@@ -16,7 +16,7 @@ and the collaborator entry. The Streamlit page only calls `ai_engine.generate_so
 handles the result. Validation logic lives inside `ai_engine.py` — no separate validator module.
 Prompt building is a single file-read inside `ai_engine.py` — no separate prompt-builder module.
 
-**Model:** `gemini-2.5-flash`
+**Model:** `gemini-flash-latest` (via `google-genai` SDK alias; stamped as `_MODEL_NAME` in `utils/gemini_client.py`)
 
 **Done bar:** Ten completely different vibes in a row all return complete, valid JSON that
 loads into the app with no manual correction.
@@ -42,14 +42,14 @@ HarmonyLedger/
 ├── tests/
 │   └── test_ai_engine.py   ← NEW: 10-vibe done-bar harness
 │
-├── pages/
+├── views/                  ← NOTE: final layout uses views/ (not pages/)
 │   ├── create_project.py   (existing — unchanged)
 │   ├── open_project.py     (existing — minor: card click navigates to view_project)
 │   └── view_project.py     ← NEW: project detail + Generate button
 │
 ├── app.py                  (existing — add "View Project" page route + session key)
 ├── .env                    (existing — GEMINI_API_KEY already present)
-└── requirements.txt        (existing — add google-generativeai)
+└── requirements.txt        (existing — add google-genai>=1.0)
 ```
 
 ---
@@ -68,7 +68,7 @@ Every successful generation must produce exactly these fields. All are required.
   "key":                "string  (e.g. C major, A minor)",
   "time_signature":     "string  (e.g. 4/4, 3/4)",
   "generation_timestamp": "ISO-8601 string  (added by ai_engine, not Gemini)",
-  "model_used":         "gemini-2.5-flash   (added by ai_engine, not Gemini)",
+  "model_used":         "gemini-flash-latest   (added by ai_engine, not Gemini)",
   "sections": {
     "verse_1": { "lyrics": "..." },
     "chorus":  { "lyrics": "..." },
@@ -107,21 +107,24 @@ Every successful generation must produce exactly these fields. All are required.
 
 ---
 
-### Sub-Task 1 — Add `google-generativeai` to requirements
+### Sub-Task 1 — Add `google-genai` to requirements
 
 **Intent**
 Add the Google Gemini SDK as a project dependency so the rest of the build can import it.
 
 **Expected Outcomes**
-- `requirements.txt` contains `google-generativeai>=0.8`.
+- `requirements.txt` contains `google-genai>=1.0`.
 - `pip install -r requirements.txt` installs without errors.
 
 **Todo List**
 1. Open `requirements.txt`.
-2. Append `google-generativeai>=0.8` on a new line.
+2. Append `google-genai>=1.0` on a new line.
 
 **Relevant Context**
 - `requirements.txt` currently contains `streamlit>=1.35` and `python-dotenv>=1.0`.
+- **Note:** The SDK used is `google-genai` (new `genai.Client` API), not the older
+  `google-generativeai` (`GenerativeModel` API). The module is imported as
+  `from google import genai` and called via `genai.Client(api_key=...)`.
 
 **Status:** [x] done
 
@@ -166,15 +169,15 @@ imports the SDK. Swapping models in the future is a one-line change here.
   - `call_gemini(prompt: str) -> str` — the only public function.
     - Loads `.env` via `python-dotenv`.
     - Reads `GEMINI_API_KEY` from environment.
-    - Initialises `google.generativeai.GenerativeModel` with `"gemini-2.5-flash"`.
-    - Calls `model.generate_content(prompt)`.
+    - Initialises `genai.Client(api_key=...)` from the `google-genai` SDK.
+    - Calls `client.models.generate_content(model=_MODEL_NAME, contents=prompt, config=...)`.
     - Returns `response.text`.
     - Catches all SDK exceptions; re-raises as `GeminiAPIError` with descriptive message.
 
 **Relevant Context**
 - `.env` already contains `GEMINI_API_KEY`.
-- SDK class: `google.generativeai.GenerativeModel`.
-- Model name: `"gemini-2.5-flash"`.
+- SDK package: `google-genai>=1.0`; imported as `from google import genai`.
+- Model name constant: `"gemini-flash-latest"` (alias kept stable by Google).
 - Follow the project convention of private helpers prefixed with `_`.
 
 **Status:** [x] done
@@ -212,7 +215,7 @@ provenance/metadata fields, and retries on failure.
      `provenance="ai_generated"`, `locked=False`, `locked_at=None`,
      `locked_by=None`, `last_edited_by="AI"`, `edit_count=0`.
    - Stamp `generation_timestamp` with `datetime.now().isoformat()`.
-   - Stamp `model_used = "gemini-2.5-flash"`.
+   - Stamp `model_used = "gemini-flash-latest"` (the `_MODEL_NAME` constant in `ai_engine.py`).
    - Return the complete `song_dict`.
 
 **Forward-compatibility:**
@@ -237,7 +240,7 @@ and will eventually lock/regenerate sections (Phase 3). Separating this from `op
 now makes Phase 3 additions clean and contained.
 
 **Expected Outcomes**
-- `pages/view_project.py` renders:
+- `views/view_project.py` renders:
   - **Header row:** project name, status badge, genre badge.
   - **Vibe card:** the user's original vibe text.
   - **If no song sections yet:**
@@ -245,7 +248,7 @@ now makes Phase 3 additions clean and contained.
     - On click: spinner → calls `ai_engine.generate_song(project.vibe, project.song["genre"])`.
     - On success: merges `song_dict` into `project.song` (preserving `genre`), sets
       `project.status = "In Progress"`, increments `project.version`, appends
-      `"ai_generated"` timeline event with `metadata = {"model_id": "gemini-2.5-flash",
+      `"ai_generated"` timeline event with `metadata = {"model_id": "gemini-flash-latest",
       "prompt_version": "song_starter_v1", "section_count": 5}`, adds Gemini collaborator
       entry to `project.collaborators` (if not already present), calls `save_project(project)`.
     - On failure: `st.error(str(e))`.
@@ -266,7 +269,7 @@ now makes Phase 3 additions clean and contained.
 - `ai_engine.generate_song` from `utils/ai_engine.py`.
 - Match dark-theme CSS from `app.py` (`#18181B` cards, `#2D2D31` borders, `#FAFAFA` text).
 - The `_label()` helper pattern (uppercase section labels) is established in
-  `pages/create_project.py` and `pages/open_project.py` — replicate it here.
+  `views/create_project.py` and `views/open_project.py` — replicate it here.
 - The collaborator entry shape is defined in `utils/models.py` lines 122–135:
   `collaborator_id` (uuid4), `name`, `role="ai_model"`, `model_id`, `contribution_pct=None`.
 
@@ -282,7 +285,7 @@ to `view_project.py` instead of expanding an inline detail panel.
 
 **Expected Outcomes**
 - **`app.py` changes:**
-  - Import `pages.view_project as view_project_page`.
+  - Import `views.view_project as view_project_page`.
   - Add `"View Project"` to `_VALID_PAGES` set (line 470).
   - Add routing: `elif st.session_state.page == "View Project": view_project_page.render()`.
   - No new session state keys needed — `active_project_id` already exists.

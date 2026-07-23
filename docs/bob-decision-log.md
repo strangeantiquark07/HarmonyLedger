@@ -232,14 +232,35 @@ The decision to exclude `contribution.computed_at` from the hash (it changes on 
 
 ### D-14: Final submission audit — Ask Mode
 
-**What we asked:**  
+**What we asked:**
 Perform a focused audit against the five IBM AI Builders Challenge judging criteria. Identify gaps between documentation and implementation. Determine whether a direct IBM AI capability adds genuine value or is forced branding.
 
-**What Bob produced:**  
+**What Bob produced:**
 This audit report (in the README changes) and this decision log file.
 
-**Human decision:**  
+**Human decision:**
 No IBM AI runtime integration. The `watsonx.ai` free tier is not reliably accessible within challenge constraints, and adding an AI-generated narrative summary would conflict with HarmonyLedger's thesis that authorship accounting is *deterministic, not estimated*. Bob's role is best evidenced by the architecture, tests, and this log — not by adding a second runtime AI call.
+
+---
+
+## Phase 6 — Release-Readiness Audit (final pass)
+
+### D-15: Full release audit — Ask + Agent Mode
+
+**What we asked:**
+Perform a complete 12-point release-readiness audit: architecture, workflow, lock/regenerate safety, provenance, Creative Passport, integrity, AI reliability, multilingual, IBM Bob alignment, README-to-code consistency, testing, and final consistency pass.
+
+**What Bob produced:**
+- Ran the complete offline test suite (164 tests, all passed).
+- Identified and fixed 4 documentation-to-code discrepancies:
+  1. `docs/phase2-ai-song-starter-plan.md` — stale `gemini-2.5-flash` model name, stale `google-generativeai` SDK reference, stale `pages/` folder path (all updated to match actual implementation: `gemini-flash-latest`, `google-genai`, `views/`).
+  2. `docs/phase5-audio-preview-plan.md` — documentation described chorus-only audio preview (original plan) but the shipped implementation supports any section via radio selector. Updated to reflect actual behaviour; original non-goal annotated as superseded.
+  3. Created `conftest.py` to register the `integration` pytest mark and eliminate `PytestUnknownMarkWarning` from test runs.
+  4. Added `test_output/` to `.gitignore` so PDF test artifacts are not committed.
+- Produced the final audit report (see README and this log).
+
+**What we changed / accepted:**
+All four fixes accepted. No code logic was changed — only documentation and configuration. The audit confirmed that the complete workflow, all 12 architecture invariants, and all documented features match the final implementation.
 
 ---
 
@@ -253,4 +274,5 @@ No IBM AI runtime integration. The `watsonx.ai` free tier is not reliably access
 | `computed_at` excluded from integrity hash | Human | Defines what counts as authorship data |
 | No IBM AI runtime call | Human | Strategic submission decision |
 | Certificate palette direction for PDF | Human | Creative/design decision |
-| All architecture, code, tests, docstrings, prompts | **IBM Bob** | Engineering execution |
+| Final audit scope and approval of all fixes | Human | Release decision |
+| All architecture, code, tests, docstrings, prompts, phase docs | **IBM Bob** | Engineering execution |
