@@ -253,7 +253,8 @@ def render() -> None:
             "<div style='display:flex;gap:0.65rem;align-items:flex-start;'>"
             "<span style='font-size:0.85rem;color:#1DB954;margin-top:0.05rem;'>④</span>"
             "<span style='font-size:0.82rem;color:#C0C0C8;line-height:1.5;'>"
-            "Export a Creative Passport proving what you wrote vs. what the AI wrote.</span></div>"
+            "Export a Creative Passport that documents your creative contribution "
+            "and preserves an auditable history of human-AI collaboration.</span></div>"
 
             "</div></div>",
             unsafe_allow_html=True,

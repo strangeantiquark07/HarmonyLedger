@@ -948,7 +948,7 @@ def _render_contribution_dashboard(project) -> None:
     st.markdown(
         f"<div style='background:#18181B;border:1px solid #2D2D31;"
         f"border-left:3px solid #3B82F6;border-radius:9px;"
-        f"padding:0.9rem 1.05rem;margin-bottom:1rem;'>"
+        f"padding:0.9rem 1.05rem;margin-bottom:0.5rem;'>"
         f"<div style='display:flex;justify-content:space-between;"
         f"margin-bottom:0.15rem;'>"
         f"<span style='font-size:0.78rem;color:#1DB954;font-weight:600;'>"
@@ -963,6 +963,16 @@ def _render_contribution_dashboard(project) -> None:
         f"<span style='font-size:0.68rem;'>How much you steered the AI</span>"
         f"</div>"
         f"</div>",
+        unsafe_allow_html=True,
+    )
+    # Non-legal disclaimer — visible in the dashboard alongside the numbers.
+    st.markdown(
+        "<div style='font-size:0.68rem;color:#71717A;line-height:1.5;"
+        "margin-bottom:1rem;font-style:italic;'>"
+        "Contribution percentages are a transparent accounting model based on "
+        "recorded creative actions. They are not a legal determination of "
+        "copyright ownership."
+        "</div>",
         unsafe_allow_html=True,
     )
 

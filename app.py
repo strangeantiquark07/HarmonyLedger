@@ -385,7 +385,7 @@ with st.sidebar:
         </div>
         <div style="font-size:1.25rem;font-weight:800;color:#C49B45;letter-spacing:-0.02em;
             line-height:1.15;margin-bottom:0.3rem;text-shadow:0 0 14px rgba(196,155,69,0.45);">HarmonyLedger</div>
-        <div style="font-size:0.68rem;color:#A1A1AA;line-height:1.4;margin-bottom:0.75rem;">Creative Passport for Human-AI Songwriting</div>
+        <div style="font-size:0.68rem;color:#A1A1AA;line-height:1.4;margin-bottom:0.75rem;">Provenance &amp; authorship for AI-assisted creative work</div>
         <div style="height:1px;background:linear-gradient(90deg,transparent,#C49B45 30%,#F5D07A 50%,#C49B45 70%,transparent);opacity:0.55;"></div>
     </div>
     """, unsafe_allow_html=True)

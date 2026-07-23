@@ -38,6 +38,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     PageTemplate,
     Frame,
+    PageBreak,
     Paragraph,
     Spacer,
     Table,
@@ -85,6 +86,14 @@ _PROV_LABELS = {
 # full audit trail; the human-facing document just doesn't repeat them.
 _TIMELINE_NOISE_EVENTS = {"contribution_computed"}
 
+# Non-legal disclaimer — required on every export per responsible-AI policy.
+# Must appear on the summary page and in the transparency statement.
+CONTRIBUTION_DISCLAIMER = (
+    "Contribution percentages are a transparent accounting model based on "
+    "recorded creative actions. They are not a legal determination of "
+    "copyright ownership."
+)
+
 _ACTOR_COLORS = {"Human": _GREEN, "AI": _PURPLE}
 
 # Default transparency statement used when no human-approved text exists yet.
@@ -94,11 +103,17 @@ _ACTOR_COLORS = {"Human": _GREEN, "AI": _PURPLE}
 # that wording is stored in project.passport["transparency_statement"] and
 # will be used verbatim in place of this text on every subsequent export.
 _DEFAULT_TRANSPARENCY = (
-    "This Creative Passport is produced by HarmonyLedger and documents the "
-    "collaborative process between a human creator and a generative AI "
-    "model (Google Gemini). It is intended to support transparency in "
-    "AI-assisted creative work and may be attached to a song submission, "
-    "sync-licensing application, or rights-body registration.\n\n"
+    "This Creative Passport is produced by HarmonyLedger — a provenance "
+    "and authorship system for AI-assisted creative work — and documents "
+    "the collaborative process between a human creator and a generative AI "
+    "model (Google Gemini). It records the creative process and preserves "
+    "an auditable history of human-AI collaboration. It may be attached to "
+    "a song submission, sync-licensing application, or rights-body "
+    "registration to provide a transparent contribution accounting.\n\n"
+
+    "IMPORTANT: Contribution percentages are a transparent accounting model "
+    "based on recorded creative actions. They are not a legal determination "
+    "of copyright ownership.\n\n"
 
     "Contribution figures are computed deterministically from an "
     "append-only event log that records every action taken during the "
@@ -125,8 +140,7 @@ _DEFAULT_TRANSPARENCY = (
     "Direction Score is the ratio of those events to all timeline events, "
     "expressed as a percentage. A higher Direction Score indicates that "
     "the creator exercised more active editorial control over the AI's "
-    "output — an important signal for rights bodies evaluating the extent "
-    "of human authorship.\n\n"
+    "output.\n\n"
 
     "The full event log, including events omitted from the printed "
     "timeline for readability, is retained in the project's source data "
@@ -259,6 +273,18 @@ class _NumberedCanvas(canvas_mod.Canvas):
 def build_passport_pdf(project) -> bytes:
     """Build a Creative Passport PDF for *project* and return raw bytes.
 
+    The PDF is structured as two logical sections:
+
+    Page 1 — Summary / Cover
+        A concise, human-readable overview of the project: song title, language,
+        genre, AI model, section counts, edit counts, contribution figures, and
+        the non-legal disclaimer.
+
+    Page 2+ — Detail
+        The full contribution split, section authorship table, creative timeline,
+        and human-approved transparency statement — identical to the previous
+        single-page layout, preserved for completeness and auditability.
+
     Args:
         project: A Project instance (utils.models.Project).
 
@@ -282,6 +308,7 @@ def build_passport_pdf(project) -> bytes:
     styles = getSampleStyleSheet()
     story  = []
 
+    # ── Shared paragraph styles ───────────────────────────────────────────────
     h2 = ParagraphStyle(
         "h2", parent=styles["Heading2"],
         fontSize=12.5, textColor=_NAVY, spaceBefore=12, spaceAfter=5,
@@ -303,22 +330,6 @@ def build_passport_pdf(project) -> bytes:
         "stat_value", parent=styles["Normal"],
         fontSize=10, textColor=_INK, leading=13, fontName="Helvetica-Bold",
     )
-
-    # ── Header band ───────────────────────────────────────────────────────────
-    song           = project.song or {}
-    ai_title       = song.get("title", "")          # creative title from Gemini
-    project_title  = project.name                    # user's own project name
-    genre    = song.get("genre", "")
-    mood     = song.get("mood", "")
-    tempo    = song.get("tempo", "")
-    key      = song.get("key", "")
-    time_sig = song.get("time_signature", "")
-
-    # "HARMONYLEDGER · CREATIVE PASSPORT" — small kicker label, upper-right.
-    # (Tried inserting spaces between letters for a tracked-out look, but
-    # reportlab counts those spaces toward line width without rendering
-    # visible gaps at this size, so the label silently overflowed again —
-    # reverted. Plain text, sized with real headroom via stringWidth().)
     watermark_style = ParagraphStyle(
         "watermark", parent=styles["Normal"], fontSize=7,
         textColor=colors.HexColor("#8DA0BA"),
@@ -339,47 +350,254 @@ def build_passport_pdf(project) -> bytes:
         leading=12, spaceBefore=8,
     )
 
-    meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
+    # ── Collect all project data up-front ────────────────────────────────────
+    # Using existing project data model fields; no new fields are introduced.
+    song          = project.song or {}
+    ai_title      = song.get("title", "")       # creative title from Gemini
+    project_title = project.name                # user's own project name
+    language      = getattr(project, "language", "") or ""
+    genre         = song.get("genre", "")
+    style         = song.get("style", "")
+    mood          = song.get("mood", "")
+    tempo         = song.get("tempo", "")
+    key           = song.get("key", "")
+    time_sig      = song.get("time_signature", "")
+    model_used    = song.get("model_used", "")
 
-    band_text_cell = [Paragraph(project_title, title_style)]
-    if ai_title and ai_title != project_title:
-        band_text_cell.append(Paragraph(f"“{ai_title}”", subtitle_style))
-    if meta_parts:
-        # A hairline rule separates the title block from the metadata line,
-        # instead of both running together with only a font-size change.
-        band_text_cell.append(HRFlowable(
-            width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
-            spaceBefore=7, spaceAfter=7, hAlign="LEFT",
-        ))
-        band_text_cell.append(Paragraph("  ·  ".join(meta_parts), band_meta_style))
-
-    watermark_cell = [Paragraph("HARMONYLEDGER  ·  CREATIVE PASSPORT", watermark_style)]
-
-    band = Table(
-        [[band_text_cell, watermark_cell]],
-        colWidths=[A4[0] - 40 * mm - 66 * mm, 66 * mm],
+    sections      = song.get("sections", {})
+    num_sections  = len(sections)
+    num_locked    = sum(1 for s in sections.values() if s.get("locked"))
+    timeline      = project.timeline or []
+    num_human_edits = sum(
+        1 for e in timeline if e.get("event_type") == "human_edit"
     )
-    band.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), _NAVY),
-        ("VALIGN",       (0, 0), (0, 0), "MIDDLE"),
-        ("VALIGN",       (1, 0), (1, 0), "MIDDLE"),
-        ("ALIGN",        (1, 0), (1, 0), "RIGHT"),
-        ("TOPPADDING",   (0, 0), (-1, -1), 16),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 16),
-        ("LEFTPADDING",  (0, 0), (0, 0), 14),
-        ("RIGHTPADDING", (1, 0), (1, 0), 12),
+    num_ai_regen  = sum(
+        1 for e in timeline if e.get("event_type") == "section_regenerated"
+    )
+    # Human creative-direction events (steering decisions)
+    _DIRECTION_TYPES = frozenset({
+        "section_locked", "section_unlocked", "section_regenerated",
+        "human_edit", "section_accepted", "section_rejected",
+    })
+    num_direction = sum(
+        1 for e in timeline if e.get("event_type") in _DIRECTION_TYPES
+    )
+
+    contrib       = project.contribution or {}
+    human_pct     = contrib.get("human_pct", 0.0)
+    ai_pct        = contrib.get("ai_pct", 0.0)
+    dir_score     = contrib.get("direction_score", 0.0)
+    meth_version  = contrib.get("methodology_version", 1)
+    computed_at   = _fmt_ts(contrib.get("computed_at", ""), fallback="Not yet computed")
+
+    passport      = project.passport or {}
+    watermark_id  = passport.get("watermark_id") or "unassigned until export"
+    # Use the timestamp already stamped by the caller (view_project.py) so the
+    # value printed on the page matches the one saved to the project file and
+    # the timeline event — not a second datetime.now() call made milliseconds later.
+    exported_at   = _fmt_ts(passport.get("exported_at") or datetime.now().isoformat())
+
+    frame_w = A4[0] - 40 * mm  # 170 mm usable width
+
+    # ── Helper: shared header band ────────────────────────────────────────────
+    def _build_header_band() -> Table:
+        meta_parts = [p for p in [genre, mood, tempo, key, time_sig] if p]
+        btc = [Paragraph(project_title, title_style)]
+        if ai_title and ai_title != project_title:
+            btc.append(Paragraph(f"\u201c{ai_title}\u201d", subtitle_style))
+        if meta_parts:
+            btc.append(HRFlowable(
+                width="38%", thickness=0.5, color=colors.HexColor("#3A4A63"),
+                spaceBefore=7, spaceAfter=7, hAlign="LEFT",
+            ))
+            btc.append(Paragraph("  \u00b7  ".join(meta_parts), band_meta_style))
+        wmc = [Paragraph("HARMONYLEDGER  \u00b7  CREATIVE PASSPORT", watermark_style)]
+        b = Table(
+            [[btc, wmc]],
+            colWidths=[frame_w - 66 * mm, 66 * mm],
+        )
+        b.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), _NAVY),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",         (1, 0), (1, 0), "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 16),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 16),
+            ("LEFTPADDING",   (0, 0), (0, 0), 14),
+            ("RIGHTPADDING",  (1, 0), (1, 0), 12),
+        ]))
+        return b
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # PAGE 1 — Summary / Cover
+    # ═════════════════════════════════════════════════════════════════════════
+
+    story.append(_build_header_band())
+    story.append(Spacer(1, 7 * mm))
+
+    # Product positioning sub-heading
+    story.append(Paragraph(
+        "A provenance and authorship system for AI-assisted creative work",
+        ParagraphStyle(
+            "positioning", parent=styles["Normal"],
+            fontSize=9, textColor=_SUBTLE, leading=14,
+        ),
+    ))
+    story.append(Spacer(1, 4 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=_BORDER))
+    story.append(Spacer(1, 5 * mm))
+
+    # ── Summary stat grid ─────────────────────────────────────────────────────
+    # Each cell is a two-row unit: small muted label above large bold value.
+    # Only cells with real data are included — no invented placeholders.
+    sum_label_style = ParagraphStyle(
+        "sum_label", parent=styles["Normal"],
+        fontSize=7.5, textColor=_SUBTLE, leading=10,
+    )
+    sum_value_style = ParagraphStyle(
+        "sum_value", parent=styles["Normal"],
+        fontSize=11.5, textColor=_INK, leading=14, fontName="Helvetica-Bold",
+    )
+    sum_value_green = ParagraphStyle(
+        "sum_value_green", parent=sum_value_style, textColor=_GREEN,
+    )
+    sum_value_purple = ParagraphStyle(
+        "sum_value_purple", parent=sum_value_style, textColor=_PURPLE,
+    )
+
+    _grid_ts = TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",   (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+    ])
+
+    def _stat_cell(label: str, value: str, vstyle=None) -> list:
+        return [Paragraph(label, sum_label_style),
+                Paragraph(value, vstyle or sum_value_style)]
+
+    def _even_cols(n: int) -> list:
+        return [frame_w / n] * n
+
+    # Row 1: song metadata
+    row1 = []
+    if ai_title:
+        row1.append(_stat_cell("SONG TITLE", ai_title))
+    if language:
+        row1.append(_stat_cell("LANGUAGE", language))
+    if genre:
+        row1.append(_stat_cell("GENRE / STYLE", f"{genre}" + (f"  ·  {style}" if style and style != genre else "")))
+    if model_used:
+        row1.append(_stat_cell("AI MODEL", model_used))
+
+    # Row 2: project provenance metadata
+    row2 = []
+    row2.append(_stat_cell("EXPORTED", exported_at))
+    row2.append(_stat_cell("PROJECT STATUS", getattr(project, "status", "") or "—"))
+    row2.append(_stat_cell("REVISION", str(project.version)))
+    created_at_fmt = _fmt_ts(getattr(project, "created_at", ""), fallback="")
+    if created_at_fmt:
+        row2.append(_stat_cell("CREATED", created_at_fmt))
+
+    # Row 3: creative action counts
+    row3 = []
+    if num_sections:
+        row3.append(_stat_cell("SONG SECTIONS", str(num_sections)))
+        row3.append(_stat_cell("LOCKED SECTIONS", str(num_locked)))
+    row3.append(_stat_cell("HUMAN EDITS", str(num_human_edits)))
+    row3.append(_stat_cell("AI REGENERATIONS", str(num_ai_regen)))
+    row3.append(_stat_cell("CREATIVE DECISIONS", str(num_direction)))
+
+    for row_cells in [row1, row2, row3]:
+        if row_cells:
+            row_tbl = Table([row_cells], colWidths=_even_cols(len(row_cells)))
+            row_tbl.setStyle(_grid_ts)
+            story.append(row_tbl)
+            story.append(Spacer(1, 5 * mm))
+
+    # ── Contribution summary (donut + stat grid) ──────────────────────────────
+    story.append(HRFlowable(width="100%", thickness=0.5, color=_BORDER))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph(
+        "Contribution Summary",
+        ParagraphStyle("cs_h", parent=styles["Normal"],
+                       fontSize=9, textColor=_NAVY,
+                       fontName="Helvetica-Bold", leading=12, spaceAfter=4),
+    ))
+
+    sum_stat_rows = [
+        [Paragraph("HUMAN AUTHORSHIP", sum_label_style),
+         Paragraph(f"{human_pct:g}%", sum_value_green)],
+        [Paragraph("AI AUTHORSHIP", sum_label_style),
+         Paragraph(f"{ai_pct:g}%", sum_value_purple)],
+        [Paragraph("DIRECTION SCORE", sum_label_style),
+         Paragraph(f"{dir_score:g}%", sum_value_style)],
+        [Paragraph("METHODOLOGY", sum_label_style),
+         Paragraph(f"v{meth_version}", sum_value_style)],
+    ]
+    sum_stat_tbl = Table(sum_stat_rows, colWidths=[55 * mm, 65 * mm])
+    sum_stat_tbl.setStyle(TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",   (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
     ]))
-    story.append(band)
+    sum_donut = _contribution_donut(human_pct, ai_pct, size_mm=40)
+    sum_contrib_row = Table(
+        [[sum_donut, sum_stat_tbl]],
+        colWidths=[50 * mm, frame_w - 50 * mm],
+    )
+    sum_contrib_row.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(sum_contrib_row)
+    story.append(Spacer(1, 5 * mm))
+
+    # ── Non-legal disclaimer box ──────────────────────────────────────────────
+    disclaimer_box = Table(
+        [[Paragraph(
+            CONTRIBUTION_DISCLAIMER,
+            ParagraphStyle("disc_sum", parent=styles["Normal"],
+                           fontSize=8, textColor=_INK, leading=12,
+                           fontName="Helvetica-Oblique"),
+        )]],
+        colWidths=[frame_w],
+    )
+    disclaimer_box.setStyle(TableStyle([
+        ("BOX",          (0, 0), (-1, -1), 0.75, _GOLD),
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#FDFBF5")),
+        ("TOPPADDING",   (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 7),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(disclaimer_box)
+
+    # Integrity line — only shown after at least one export
+    if passport.get("exported_at"):
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(
+            f"<b>Integrity:</b> source is project.json (append-only timeline)  "
+            f"\u00b7  Passport ID: {watermark_id}  "
+            f"\u00b7  Methodology v{meth_version}",
+            ParagraphStyle("integrity", parent=styles["Normal"],
+                           fontSize=7.5, textColor=_SUBTLE, leading=11),
+        ))
+
+    # Page break — detail pages follow
+    story.append(PageBreak())
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # PAGE 2+ — Detail: contribution split, sections, timeline, statement
+    # ═════════════════════════════════════════════════════════════════════════
+
+    story.append(_build_header_band())
     story.append(Spacer(1, 6 * mm))
 
     # ── Contribution Split ────────────────────────────────────────────────────
-    contrib      = project.contribution or {}
-    human_pct    = contrib.get("human_pct", 0.0)
-    ai_pct       = contrib.get("ai_pct", 0.0)
-    dir_score    = contrib.get("direction_score", 0.0)
-    meth_version = contrib.get("methodology_version", 1)
-    computed_at  = _fmt_ts(contrib.get("computed_at", ""), fallback="Not yet computed")
-
     story.append(Paragraph("Contribution Split", h2))
 
     stat_block = Table(
@@ -399,10 +617,10 @@ def build_passport_pdf(project) -> bytes:
         colWidths=[70 * mm],
     )
     stat_block.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING",   (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 1),
     ]))
 
     donut_cell = Table(
@@ -413,11 +631,11 @@ def build_passport_pdf(project) -> bytes:
 
     contrib_row = Table(
         [[donut_cell, stat_block]],
-        colWidths=[45 * mm, A4[0] - 40 * mm - 45 * mm],
+        colWidths=[45 * mm, frame_w - 45 * mm],
     )
     contrib_row.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
     ]))
     story.append(contrib_row)
@@ -425,12 +643,19 @@ def build_passport_pdf(project) -> bytes:
     story.append(Paragraph(
         f"Methodology v{meth_version} · last computed {computed_at}", muted,
     ))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
+    # Non-legal disclaimer on the detail page as well
+    story.append(Paragraph(
+        CONTRIBUTION_DISCLAIMER,
+        ParagraphStyle("detail_disc", parent=styles["Normal"],
+                       fontSize=7.5, textColor=_SUBTLE, leading=11,
+                       fontName="Helvetica-Oblique"),
+    ))
+    story.append(Spacer(1, 4 * mm))
     story.append(HRFlowable(width="100%", thickness=0.75, color=_BORDER))
     story.append(Spacer(1, 4 * mm))
 
     # ── Section Authorship ────────────────────────────────────────────────────
-    sections = song.get("sections", {})
     if sections:
         story.append(Paragraph("Section Authorship", h2))
         sec_data = [["", "Section", "Provenance", "Last Edited By"]]
@@ -469,7 +694,6 @@ def build_passport_pdf(project) -> bytes:
 
     # ── Creative Timeline ─────────────────────────────────────────────────────
     story.append(Paragraph("Creative Timeline", h2))
-    timeline = project.timeline or []
     visible_events = [e for e in timeline if e.get("event_type") not in _TIMELINE_NOISE_EVENTS]
     omitted = len(timeline) - len(visible_events)
 
@@ -482,7 +706,9 @@ def build_passport_pdf(project) -> bytes:
                 str(row_no),
                 str(event.get("event_type", "")).replace("_", " "),
                 str(event.get("actor", "")),
-                (lambda d: d[:57] + "…" if len(d) > 58 else d)(str(event.get("description", ""))),
+                (lambda d: d[:57] + "\u2026" if len(d) > 58 else d)(
+                    str(event.get("description", ""))
+                ),
                 _fmt_ts(event.get("timestamp", "")),
             ])
         # Sums to 170mm (full frame width); "When" gets 36mm so a full
@@ -525,7 +751,6 @@ def build_passport_pdf(project) -> bytes:
     story.append(Spacer(1, 4 * mm))
 
     # ── Transparency Statement ────────────────────────────────────────────────
-    passport         = project.passport or {}
     custom_statement = passport.get("transparency_statement", "").strip()
     authorship_line  = passport.get("authorship_line", "").strip()
     statement_text   = custom_statement or _DEFAULT_TRANSPARENCY.format(version=meth_version)
@@ -533,9 +758,11 @@ def build_passport_pdf(project) -> bytes:
     quote_style = ParagraphStyle(
         "quote", parent=body, textColor=_INK, leftIndent=10, leading=15,
     )
-    quote_cell = Table([[Paragraph("Transparency Statement", h2)],
-                        [Paragraph(statement_text, quote_style)]],
-                       colWidths=[A4[0] - 40 * mm - 8])
+    quote_cell = Table(
+        [[Paragraph("Transparency Statement", h2)],
+         [Paragraph(statement_text, quote_style)]],
+        colWidths=[frame_w - 8],
+    )
     quote_cell.setStyle(TableStyle([
         ("LEFTPADDING",  (0, 0), (-1, -1), 10),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -557,20 +784,15 @@ def build_passport_pdf(project) -> bytes:
 
     # ── Provenance stamp ──────────────────────────────────────────────────────
     story.append(Spacer(1, 6 * mm))
-    watermark_id = passport.get("watermark_id") or "unassigned until export"
-    # Use the timestamp already stamped by the caller (view_project.py) so the
-    # value printed on the page matches the one saved to the project file and
-    # the timeline event — not a second datetime.now() call made milliseconds later.
-    exported_at  = _fmt_ts(passport.get("exported_at") or datetime.now().isoformat())
     stamp = Table(
         [[Paragraph(
             f"<b>Project ID</b>  {project.project_id}<br/>"
             f"<b>Watermark</b>  {watermark_id}<br/>"
-            f"<b>Exported</b>  {exported_at}  ·  Project revision {project.version}",
+            f"<b>Exported</b>  {exported_at}  \u00b7  Project revision {project.version}",
             ParagraphStyle("stamp", parent=muted, leading=12, fontSize=7.5,
                             textColor=_SUBTLE),
         )]],
-        colWidths=[A4[0] - 40 * mm],
+        colWidths=[frame_w],
     )
     stamp.setStyle(TableStyle([
         ("BOX",          (0, 0), (-1, -1), 0.6, _BORDER),
